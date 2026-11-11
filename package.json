@@ -1,0 +1,20 @@
+{
+  "name": "hackathon-archil",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Source Control: observable procurement with Archil, Keenable and reviewed email",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "setup": "npm --prefix apps/outreach ci",
+    "build": "npm --prefix apps/outreach run build",
+    "typecheck": "npm --prefix apps/outreach run typecheck",
+    "test": "npm --prefix apps/outreach test",
+    "start": "npm --prefix apps/outreach start",
+    "dev": "npm --prefix apps/outreach run dev",
+    "dev:web": "npm --prefix apps/outreach run dev:web",
+    "connect:keenable": "npm --prefix apps/outreach run connect:keenable",
+    "connect:email": "npm --prefix apps/outreach run connect:email"
+  }
+}

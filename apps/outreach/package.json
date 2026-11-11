@@ -1,0 +1,44 @@
+{
+  "dependencies": {
+    "ajv": "^8.20.0",
+    "disk": "^1.12.1",
+    "dotenv": "^18.0.10",
+    "express": "^5.3.0",
+    "html-to-text": "^10.0.1",
+    "keenable": "^0.1.4",
+    "libphonenumber-js": "^1.13.16",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "tldts": "^7.4.21"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/html-to-text": "^9.0.4",
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.3.0",
+    "esbuild": "^0.28.2",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8"
+  },
+  "name": "autonomous-sourcing",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "dev": "node --watch --import tsx server/index.ts",
+    "dev:web": "vite",
+    "start": "node --import tsx server/index.ts",
+    "build:verifier": "esbuild server/verify-cli.ts --bundle --platform=node --format=esm --target=node22 --outfile=work/verify_and_fingerprint.mjs",
+    "build": "npm run build:verifier && vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "connect:keenable": "node scripts/connect-keenable.mjs",
+    "connect:email": "node scripts/connect-email.mjs"
+  }
+}

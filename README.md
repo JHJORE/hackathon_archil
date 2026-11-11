@@ -4,7 +4,9 @@
 
 One local procurement dashboard combines RFQ Scout, parallel manufacturer research, source evidence, and a supplier inbox. Archil stores the work and runs verification beside the saved evidence. The operator completes buying requirements and approves every real outgoing email.
 
-![RFQ Scout in the unified Source / Control dashboard](docs/dashboard.png)
+![RFQ Scout with fictional sample data; integrations disabled for this screenshot](docs/dashboard.png)
+
+*Public example only. Your own credentials and disks enable live research and inbox monitoring.*
 
 ## What runs
 
@@ -20,7 +22,7 @@ apps/rfq-scout/       Producer handoff; original source not yet included
 docs/architecture.md
 ```
 
-> **Scout producer source is not included yet.** The unified app already reads published Scout records from a separate Archil disk; its read adapter is not the producer that discovers and publishes RFQs. Add the cofounder’s original source under [apps/rfq-scout](apps/rfq-scout/) in this repository when available. Manual RFQ entry and the included document review work independently. Feed contents depend on the configured disk, records, and access permissions.
+> **Scout producer source is not included yet.** The unified app already reads published Scout records from a separate Archil disk; its read adapter is not the producer that discovers and publishes RFQs. Add the cofounder’s original source under [apps/rfq-scout](apps/rfq-scout/) in this repository when available. Manual RFQ entry and the fictional sample review work independently. Feed contents depend on the configured disk, records, and access permissions.
 
 ## Run locally
 
@@ -50,7 +52,7 @@ These helpers save keys locally without displaying them. Keenable linking and av
 
 ## Use it
 
-1. **Review an RFQ** from Scout or the included document, or choose **New RFQ**. Complete missing specifications, quantity, shipping terms, and price limits. Each case represents one product line.
+1. **Review an RFQ** from Scout or the fictional sample, or choose **New RFQ**. Complete missing specifications, quantity, shipping terms, and price limits. Each case represents one product line.
 2. **Start sourcing.** Inspect the returned evidence and uncertainties. A run can return fewer than three suppliers when evidence is insufficient; no manufacturers are invented to fill the shortlist.
 3. **Choose communications.** Demo controls inject explicitly simulated quotes. **Prepare email outreach** creates a separate real-email case with editable drafts. Buyer contacts from Scout are never treated as supplier addresses.
 4. **Review each send.** Save changes, then approve the exact recipient and saved message. Replies can generate a clarification or one counteroffer, each requiring approval. A target-met result is a recommendation, not an accepted purchase.

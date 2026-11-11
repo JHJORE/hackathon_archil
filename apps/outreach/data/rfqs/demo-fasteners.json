@@ -1,0 +1,18 @@
+{
+  "reference": "DEMO-FASTENERS-001",
+  "fictional": true,
+  "rfq": {
+    "description": "DEMO ONLY \u2014 Socket head cap screws",
+    "standard": "ISO 4762",
+    "size": "M8x30",
+    "grade": "12.9",
+    "finish": "Black oxide",
+    "quantity": 50000,
+    "currency": "USD",
+    "incoterm": "CIF",
+    "destination": "Oakland",
+    "targetUnitPrice": 0.065,
+    "maxUnitPrice": 0.082,
+    "requiredBy": null
+  }
+}
