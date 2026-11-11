@@ -73,8 +73,8 @@ app.get('/api/health',(_req,res)=>res.json({ready:recovered,error:startupError})
 app.get('/api/runtime',(_req,res)=>res.json(snapshot()));
 app.get('/api/events',(req,res)=>{
   res.set({'Content-Type':'text/event-stream','Cache-Control':'no-cache','Connection':'keep-alive'});res.flushHeaders();clients.add(res);
-  res.write('retry: 5000\n\n');
-  const lease=setTimeout(()=>res.end(),25000);
+  res.write('retry: 15000\n\n');
+  const lease=setTimeout(()=>res.end(),5000);
   res.write(`event: snapshot\ndata: ${JSON.stringify(snapshot())}\n\n`);
   const last=req.get('Last-Event-ID');if(last){const at=events.recent.findIndex(e=>e.id===last);if(at>=0)for(const event of events.recent.slice(at+1))res.write(`id: ${event.id}\nevent: event\ndata: ${JSON.stringify(event)}\n\n`);}
   const interval=setInterval(()=>res.write(': heartbeat\n\n'),15000);req.on('close',()=>{clearInterval(interval);clearTimeout(lease);clients.delete(res);});
