@@ -1,10 +1,12 @@
 import type { RfqProvenance } from './scout.js';
 import type { EmailDraft, EmailStatus, MailAccount, QuoteEvidence } from './email.js';
 export type Rfq = {
-  description: string; standard: string; size: string; grade: string; finish: string;
-  quantity: number; currency: string; incoterm: string; destination: string;
-  targetUnitPrice: number; maxUnitPrice: number; requiredBy: string | null;
+  description: string; standard: string | null; size: string | null; grade: string | null; finish: string | null;
+  quantity: number | null; currency: string | null; incoterm: string | null; destination: string | null;
+  targetUnitPrice: number | null; maxUnitPrice: number | null; requiredBy: string | null;
 };
+/** Complete reviewed terms needed before creating or sending outreach. Delivery date stays optional. */
+export type OutreachRfq = { [K in Exclude<keyof Rfq, 'requiredBy'>]: NonNullable<Rfq[K]> } & Pick<Rfq, 'requiredBy'>;
 export type EvidencePage = {
   requestedUrl: string; url: string; title: string; markdown: string;
   extraction: string; fetchedAt: string; truncated: boolean; extractionUrl: string;

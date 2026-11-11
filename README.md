@@ -2,7 +2,7 @@
 
 **From an RFQ to sourced suppliers and reviewed negotiations.**
 
-One local procurement dashboard combines RFQ Scout, parallel manufacturer research, source evidence, and a supplier inbox. Archil stores the work and runs verification beside the saved evidence. The operator completes buying requirements and approves every real outgoing email.
+One local procurement dashboard combines full-document RFQ upload, RFQ Scout, parallel manufacturer research, source evidence, and a supplier inbox. Archil stores the work and runs verification beside the saved evidence. The operator reviews buying requirements and approves every real outgoing email.
 
 ![RFQ Scout with fictional sample data; integrations disabled for this screenshot](docs/dashboard.png)
 
@@ -10,6 +10,7 @@ One local procurement dashboard combines RFQ Scout, parallel manufacturer resear
 
 ## What runs
 
+- **RFQ intake:** upload a searchable PDF or UTF-8 text document, review extracted product lines and their source quotations, and select the lines to source.
 - **Research:** Keenable search and live fetches feed English and Mandarin Codex workers in parallel.
 - **Verification:** parallel Archil executions check contacts, fingerprint snapshots, and prepare grounded supplier candidates.
 - **Negotiation:** three shared worker slots process supplier replies, with one reviewed price counteroffer per supplier.
@@ -32,13 +33,18 @@ From the repository root:
 
 ```sh
 npm run setup
-cp apps/outreach/.env.example apps/outreach/.env
+cp -n apps/outreach/.env.example apps/outreach/.env
 # Configure the local environment file.
 npm run build
+npm run check:setup
 npm start
 ```
 
 Open [localhost:4310](http://127.0.0.1:4310). Root scripts delegate to `apps/outreach`; setup does not install Codex CLI. For development, run `npm run dev` and `npm run dev:web` in separate terminals. The Vite UI uses port `4311`.
+
+Either founder can follow the [cofounder startup guide](docs/cofounder-startup.md). Choose **one backend owner** for a shared outreach disk and prefix; do not start a second backend against the same state. The repository shares code and the disks share data. Remote access is not configured: the localhost URL works on the host running the app. When private hosting is configured, both founders use that one backend's authenticated URL.
+
+`npm run check:setup` checks Node, installed dependencies, build files, Codex availability/login, and configuration presence without printing credential or disk-ID values. It makes no service API calls and does not start the app. Permissions, credits, model inference and exclusive backend ownership still need verification during operation.
 
 See [.env.example](apps/outreach/.env.example). Set `ARCHIL_API_KEY`, `ARCHIL_REGION`, and an `ARCHIL_DISK_ID` your account can access. `ARCHIL_PREFIX` isolates outreach records. `SCOUT_DISK_ID` selects the separate published-input disk. The repository does not grant access to the team's disks.
 
@@ -52,12 +58,14 @@ These helpers save keys locally without displaying them. Keenable linking and av
 
 ## Use it
 
-1. **Review an RFQ** from Scout or the fictional sample, or choose **New RFQ**. Complete missing specifications, quantity, shipping terms, and price limits. Each case represents one product line.
-2. **Start sourcing.** Inspect the returned evidence and uncertainties. A run can return fewer than three suppliers when evidence is insufficient; no manufacturers are invented to fill the shortlist.
-3. **Choose communications.** Demo controls inject explicitly simulated quotes. **Prepare email outreach** creates a separate real-email case with editable drafts. Buyer contacts from Scout are never treated as supplier addresses.
+1. **Upload and review an RFQ**, select a Scout request, or choose **New RFQ**. An upload can contain multiple products: review the source quotations and select the lines you want. Each selected line becomes its own sourcing case.
+2. **Start sourcing.** Research can use known requirements while missing values remain `null`. Inspect the returned evidence and uncertainties. A run can return fewer than three suppliers when evidence is insufficient; no manufacturers are invented to fill the shortlist.
+3. **Choose communications.** Complete required specifications and commercial fields before real email; missing fields block outreach. Demo controls inject explicitly simulated quotes. **Prepare email outreach** creates a separate real-email case with editable drafts. Buyer contacts from Scout are never treated as supplier addresses.
 4. **Review each send.** Save changes, then approve the exact recipient and saved message. Replies can generate a clarification or one counteroffer, each requiring approval. A target-met result is a recommendation, not an accepted purchase.
 
 The backend monitors tracked email threads while running. Unknown sends are reconciled instead of blindly resent. Retain both Archil state and local delivery-operation records across restarts. This app does not place orders or make payments.
+
+Uploads accept searchable PDF and UTF-8 `.txt` files up to **10 MB**, with at most **100 PDF pages** and **400,000 extracted text characters**. The original is saved to Archil before extraction. Non-null extracted buying fields require supporting source quotations; missing terms and budgets are not filled with demo values. Scanned PDFs need OCR before upload; OCR is not built in. See [document intake](apps/outreach/README.md#upload-a-complete-rfq) for the review flow and API.
 
 ## Rehearse a 90-second demo
 
@@ -79,7 +87,7 @@ npm test
 npm run build
 ```
 
-The clean submission copy passes dependency installation, TypeScript checking, **105 tests**, and a production build.
+The validation commands cover setup diagnostics, application tests, TypeScript checking and the production build. Setup tests use mocked configuration and a bounded local child process; they do not contact service APIs.
 
 Tests use synthetic fixtures and fake email transport for scheduling, grounding, source revisions, approval, deduplication, and recovery. They do not prove that a real supplier exchange occurred.
 

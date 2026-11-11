@@ -4,6 +4,7 @@ import type { EmailDraft, EmailStatus, MailAccount, MailProvider, OutgoingMail, 
 import { outgoingMailHash, canonicalMailBody } from './mail-content.js';
 import { evaluateQuote } from './negotiation-schema.js';
 import { authoredText, emailNegotiationSchema, groundEmailExtraction } from './email-negotiation.js';
+import { isOutreachReady, requireOutreachReady } from './rfq-input.js';
 
 type EmailDecision = {
   version: 1; messageId: string; supplierId: string; createdAt: string; inbound: Message;
@@ -40,6 +41,7 @@ function specifications(rfq: Rfq): string {
   return `${rfq.description}\nStandard: ${rfq.standard}\nSize: ${rfq.size}\nGrade: ${rfq.grade}\nFinish: ${rfq.finish}\nQuantity: ${rfq.quantity}\nQuote currency: ${rfq.currency}\nDelivery terms: ${rfq.incoterm} ${rfq.destination}${rfq.requiredBy ? `\nRequired delivery date: ${rfq.requiredBy}` : ''}`;
 }
 function draftBody(kind: EmailDraft['kind'], rfq: Rfq, from: MailAccount, explanation = ''): string {
+  requireOutreachReady(rfq);
   const request = kind === 'rfq' ? 'Please provide a quotation for the following requirement. Confirm every specification, unit price, minimum order quantity and lead time in days.'
     : kind === 'counteroffer' ? `Thank you for your quotation. Can you offer ${rfq.currency} ${rfq.targetUnitPrice} per unit while retaining all of the specifications, quantity and delivery terms below? Please confirm the complete offer and lead time.`
     : `Thank you for your reply. Please confirm one complete, unconditional offer for the requirement below, including unit price, currency, quantity, specifications, delivery terms and lead time.\n${explanation}`;
@@ -95,6 +97,7 @@ export class EmailWorkflow {
 
   async prepare(sourceId: string, supplierIds: string[]): Promise<CaseState> {
     const source = await this.host.read(sourceId);
+    requireOutreachReady(source.rfq);
     if (!source.researchComplete) throw conflict('Complete supplier research before preparing email outreach.');
     if (!Array.isArray(supplierIds) || supplierIds.length < 1 || supplierIds.length > 3 || new Set(supplierIds).size !== supplierIds.length) throw new Error('Select one to three distinct suppliers.');
     const selected = supplierIds.map(id => source.suppliers.find(s => s.supplier.supplierId === id));
@@ -154,6 +157,7 @@ export class EmailWorkflow {
     return this.host.queue(id, current.supplierId, async () => {
       const state = await this.host.read(id);
       if (!external(state)) throw new Error('This is not an email outreach case.');
+      requireOutreachReady(state.rfq);
       await this.checkAccount(state);
       const draft = await this.draft(id, draftId);
       if (approval.revision !== draft.revision || approval.contentHash !== draft.contentHash || envelope(draft).contentHash !== draft.contentHash) throw conflict('The draft content changed. Review and approve its exact current revision.');
@@ -379,7 +383,7 @@ export class EmailWorkflow {
       const counterId = `counter-${message.supplierId}-r1`;
       const oldCounter = await this.store.get<EmailDraft>(this.draftKey(id, counterId));
       const counterConsumed = previous.round > 0 || (oldCounter && ['sent', 'sending', 'send unknown'].includes(oldCounter.status));
-      if (!issue && needsClarification) proposed = this.makeDraft(state, previous, 'clarification', message, [...issues, evaluation.explanation].join('\n'));
+      if (isOutreachReady(state.rfq) && !issue && needsClarification) proposed = this.makeDraft(state, previous, 'clarification', message, [...issues, evaluation.explanation].join('\n'));
       else if (evaluation.counter && !counterConsumed) {
         proposed = this.makeDraft(state, previous, 'counteroffer', message);
         if (oldCounter) {

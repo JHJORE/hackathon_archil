@@ -22,7 +22,7 @@ For Keenable, run `npm run connect:keenable`, open the returned verification URL
 
 Create an API key at https://console.agentmail.to, then run `npm run connect:email` in your own Terminal. The hidden prompt saves it into the ignored local `.env` with owner-only permissions. Set `AGENTMAIL_INBOX_ID` for an existing inbox, or choose **Connect inbox** to provision one explicitly. `EMAIL_SENDER_NAME` sets the display name for a newly provisioned inbox. No Google Cloud project or OAuth client is required. Connection and immutable local delivery-operation records stay under ignored `work/auth/`; credentials never enter Archil, the browser, or Codex worker inputs.
 
-After research completes, choose **Prepare email outreach**, select up to three suppliers, and create a separate email case. Its drafts show the recipient, subject, full message and published contact source. Enter missing addresses yourself. Edits must be saved and reviewed before **Approve & send email**; approval binds the exact recipient, text and revision. The original simulated case is preserved.
+After research completes and required RFQ specifications and commercial fields are resolved, choose **Prepare email outreach**, select up to three suppliers, and create a separate email case. Missing required RFQ fields block outreach and negotiation; research can proceed with those fields unresolved. Its drafts show the recipient, subject, full message and published contact source. Enter missing addresses yourself. Edits must be saved and reviewed before **Approve & send email**; approval binds the exact recipient, text and revision. The original simulated case is preserved.
 
 While the backend runs, it checks only tracked supplier threads every 15 seconds. **Check replies now** uses the same serialized polling operation. Incoming messages are saved to Archil before model processing. Grounded quote fields show their supplier-message excerpts. Conditional or incomplete offers and attachment-only quotes require clarification or manual review. Every outgoing RFQ, clarification and counteroffer requires review. After the single price counteroffer, subsequent replies update the recommendation; the app never accepts an order.
 
@@ -30,9 +30,17 @@ AgentMail's thread endpoint includes message bodies in its response and has no d
 
 Archil stores an immutable approval intent before the provider is contacted. The adapter sends the exact approved content directly, with a stable AgentMail idempotency key. AgentMail may append its service footer on delivery; the review screen discloses this provider behavior. It does not rely on a mutable provider draft. A lost response becomes **send unknown** and is reconciled against sent messages; unresolved operations are never blindly resent. Provider acceptance is not a guarantee of delivery to the recipient. Local operation records and the Archil journal must both be retained across restarts. This deployment supports one local backend process.
 
+## Upload a complete RFQ
+
+Choose **Upload RFQ** and select a searchable PDF or UTF-8 `.txt` document. Uploads are limited to 10 MB, 100 PDF pages and 400,000 extracted text characters, with at most 50 extracted product lines; split larger requests. The original bytes and fingerprint are persisted to the outreach Archil disk before text extraction and Codex processing. In explicit `APP_STORAGE=file` test mode, the same records use local test storage.
+
+Review the extracted product lines, source-page quotations, document requirements and uncertainties. Every non-null extracted buying field must have supporting source text; unsupported specifications, quantities and price limits remain `null`. Historical awards are not treated as buying limits, and the bid closing date is separate from the delivery requirement. Select the lines you want to source: each selected line creates its own case. You can save those cases or request research immediately, using the known requirements. Real email remains blocked until required specifications and commercial fields are complete, and every send still requires approval.
+
+The original document remains available for download from the review. Scanned PDFs need OCR or a searchable replacement; OCR is not built in. Password-protected PDFs must be unlocked. A document with readable and scanned pages may yield partial evidence, so review the unreadable-page warnings. Failed extraction preserves the uploaded source and reports an error instead of inventing fields.
+
 ## Demo
 
-For your own RFQ, choose **New RFQ**, enter the product, specification, quantity, shipping terms and budget, then choose **Save & start sourcing**. **Save draft** persists the case without running research. JSON import remains available as an advanced input. Each case currently represents one product line. A missing delivery date stays unresolved. Both discovery tracks use your entered RFQ; fastener-specific terminology is only added for fastener requests.
+For your own RFQ, upload the complete document as described above or choose **New RFQ** to enter one product manually. **Save draft** persists a case without running research. JSON import remains available as an advanced input. Each case represents one product line; a multi-line upload creates separate cases for selected lines. Missing values stay unresolved and research uses only known requirements. Both discovery tracks use that case's RFQ; fastener-specific terminology is only added for fastener requests.
 
 Live sourcing requires a connected Keenable account with available credits. A missing connection blocks the start request with an actionable error while keeping the RFQ saved. After `npm run connect:keenable` succeeds, the running backend detects the new local key and the dashboard updates its connection status; no key is sent to the browser.
 
@@ -57,6 +65,10 @@ The verifier uses `archil.exec` with read-only scripts/input mounts and conditio
 ## APIs
 
 - `GET /api/runtime`, `GET /api/events` (SSE), `GET /api/health`
+- `GET /api/rfq-uploads` lists saved uploads; `GET /api/rfq-uploads/:id` returns extraction status, lines and evidence
+- `POST /api/rfq-uploads` accepts the raw PDF/TXT body with `Content-Type: application/pdf` or `text/plain` and a URI-encoded filename in `X-File-Name`; returns `202` after persistence, with extraction queued
+- `GET /api/rfq-uploads/:id/document` downloads the original upload
+- `POST /api/rfq-uploads/:id/import` accepts `{ "lineIds": ["line-1"], "start": false }`; creates selected cases, optionally requests research, and returns any start errors alongside the saved cases
 - `GET/POST /api/cases`; creation accepts `{ "rfq": ... }` or the default fixture
 - `GET /api/cases/:id`; `POST /api/cases/:id/run`
 - `POST /api/cases/:id/replay` creates a new case from the completed case's saved evidence
@@ -69,7 +81,7 @@ The verifier uses `archil.exec` with read-only scripts/input mounts and conditio
 - `PATCH /api/cases/:id/email-drafts/:draftId` with `revision`, `to`, `subject`, `body`
 - `POST /api/cases/:id/email-drafts/:draftId/approve-send` with `revision`, `contentHash`
 
-RFQ fields: `description`, `standard`, `size`, `grade`, `finish`, `quantity`, `currency`, `incoterm`, `destination`, `targetUnitPrice`, `maxUnitPrice`, and `requiredBy` (ISO date or null). See `shared/types.ts` for data contracts.
+RFQ fields: `description`, `standard`, `size`, `grade`, `finish`, `quantity`, `currency`, `incoterm`, `destination`, `targetUnitPrice`, `maxUnitPrice`, and `requiredBy` (ISO date or null). The description is required; other unknown fields are represented explicitly as `null`, not omitted or guessed. Research accepts incomplete requirements, while real outreach requires the specifications and commercial fields. A missing delivery date remains a separate unresolved requirement. See `shared/types.ts` and `shared/rfq-upload.ts` for contracts.
 
 ## Validation
 
@@ -92,7 +104,7 @@ The local dashboard now reads the separate `rfq-scout` Archil disk and presents 
 - `GET /api/scout/items/document-demo-fasteners/document` serves the fictional sample JSON locally.
 - `POST /api/scout/import` accepts `{source:{id,sha256},rfq}` after operator review. It verifies that the source revision still matches, validates/canonicalizes the complete RFQ, preserves the source record, and creates a deterministic case on `out-reach`. Identical retries reuse that case; a changed source or reviewed RFQ creates a new case.
 
-Import does not launch research or send mail. The dashboard’s **Save & start sourcing** action starts the existing live pipeline after successful import. Existing email approvals remain mandatory. Published buyer contacts are never treated as supplier email addresses. RFQs containing multiple product lines, non-piece quantities or incomplete specifications require mapping into the current one-product-line contract.
+Scout import does not launch research or send mail. The dashboard’s **Save & start sourcing** action starts the existing live pipeline after successful import. Existing email approvals remain mandatory. Published buyer contacts are never treated as supplier email addresses. Scout records with multiple products require choosing one product; document uploads provide a separate line-selection flow that creates one case per selected product. Non-piece quantities and unsupported specifications remain unresolved.
 
 The bundled sample describes 50,000 ISO 4762 M8x30 Grade 12.9 black-oxide screws, CIF Oakland. Its USD 0.065 target and USD 0.082 maximum are fictional demonstration values; the delivery deadline is unresolved. Real buyer documents, their extracted contents, private campaigns and inbox data are not included in the repository. Enter verified requirements for real sourcing. The current discovery pipeline targets Chinese manufacturers and does not determine procurement eligibility or submit government bids.
 

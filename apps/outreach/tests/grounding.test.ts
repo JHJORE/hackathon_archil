@@ -42,6 +42,15 @@ test('raw SHA256, final URL metadata and truncation are preserved exactly', () =
   assert.ok(candidate.uncertainties.some(text => text.includes('truncated')));
 });
 
+test('unknown technical requirements remain unresolved after grounding a sourcing lead', () => {
+  const rfq = { ...DEMO_RFQ, standard: null, size: null, grade: null, finish: null, quantity: null, currency: null, incoterm: null, destination: null, targetUnitPrice: null, maxUnitPrice: null };
+  const candidate = verifyCandidates([draft], [page], rfq).candidates[0]!;
+  assert.ok(candidate); assert.ok(candidate.technicalFit.score <= 50);
+  assert.match(candidate.technicalFit.summary, /No reviewed technical specifications/);
+  assert.ok(candidate.uncertainties.some(text => /requirements are unknown/.test(text)));
+  assert.equal(rfq.standard, null); assert.equal(rfq.quantity, null);
+});
+
 test('unfetched sources, marketplace redirects and fabricated company names are rejected', () => {
   assert.equal(verifyCandidates([{ ...draft, sourceUrl: 'https://unknown.example.com' }], [page], DEMO_RFQ).candidates.length, 0);
   assert.equal(verifyCandidates([draft], [{ ...page, url: 'https://seller.alibaba.com/p' }], DEMO_RFQ).candidates.length, 0);

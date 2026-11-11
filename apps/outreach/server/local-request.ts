@@ -8,7 +8,8 @@ export function localRequestGuard(port: number): RequestHandler {
   return (req, res, next) => {
     const origin = req.get('origin');
     if (!hosts.has(req.get('host') || '') || (origin && !origins.has(origin))) return res.status(403).json({ error: 'Use the local sourcing dashboard for this request' });
-    if (req.path.startsWith('/api/') && ['POST', 'PATCH', 'PUT'].includes(req.method) && !req.is('application/json')) return res.status(415).json({ error: 'API changes require application/json' });
+    const documentUpload = req.method === 'POST' && req.path === '/api/rfq-uploads' && (req.is('application/pdf') || req.is('text/plain'));
+    if (req.path.startsWith('/api/') && ['POST', 'PATCH', 'PUT'].includes(req.method) && !documentUpload && !req.is('application/json')) return res.status(415).json({ error: 'API changes require application/json, except PDF/text RFQ uploads' });
     res.setHeader('X-Content-Type-Options', 'nosniff');
     next();
   };

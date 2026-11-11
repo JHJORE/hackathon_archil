@@ -49,11 +49,25 @@ test('RFQ-specific discovery preserves default screw enrichment without imposing
     const before = structuredClone(rfq);
     for (const track of ['english', 'chinese'] as const) {
       const query = buildResearchQuery(Object.freeze(rfq), track);
-      for (const term of [rfq.description, rfq.standard, rfq.size, rfq.grade, rfq.finish, String(rfq.quantity), rfq.currency, rfq.incoterm, rfq.destination, ...(rfq.requiredBy ? [rfq.requiredBy] : [])]) assert.ok(query.includes(term), `${track} query preserves ${term}`);
+      for (const term of [rfq.description, rfq.standard, rfq.size, rfq.grade, rfq.finish, String(rfq.quantity), rfq.currency, rfq.incoterm, rfq.destination, ...(rfq.requiredBy ? [rfq.requiredBy] : [])].filter((value): value is string => value !== null)) assert.ok(query.includes(term), `${track} query preserves ${term}`);
       assert.doesNotMatch(query, /DIN912|ISO4762|ISO 4762|M8x30|12\.9|socket head cap|cold heading|heat treatment|紧固件|内六角|冷镦|热处理|海盐|宁波|永年|嘉善/i);
     }
     assert.deepEqual(rfq, before);
   }
+});
+
+test('description and part identifiers can drive both research tracks without invented missing requirements', () => {
+  const rfq: Rfq = { description: 'Industrial motor manufacturer part ABC-123', standard: null, size: null, grade: null, finish: null, quantity: null, currency: null, incoterm: null, destination: null, targetUnitPrice: null, maxUnitPrice: null, requiredBy: null };
+  const before = structuredClone(rfq);
+  for (const track of ['english', 'chinese'] as const) {
+    const query = buildResearchQuery(rfq, track);
+    assert.ok(query.includes(rfq.description));
+    assert.doesNotMatch(query, /\b(?:null|undefined|USD|CIF|Oakland|50000|quantity|DIN912)\b|采购数量|报价币种|交货条款|紧固件/i);
+    const partlyKnown = buildResearchQuery({ ...rfq, standard: 'IEC 60034', quantity: 8, destination: 'Seattle' }, track);
+    for (const term of ['ABC-123', 'IEC 60034', '8', 'Seattle']) assert.ok(partlyKnown.includes(term));
+    assert.doesNotMatch(partlyKnown, /\b(?:null|undefined|USD|CIF|Oakland)\b/i);
+  }
+  assert.deepEqual(rfq, before);
 });
 
 test('custom steel RFQ drives both live search tracks and saved/model inputs without fastener defaults', async () => {
@@ -252,6 +266,44 @@ test('saved research copies historical raw evidence before real synthesis and sc
     assert.equal(report?.searches, 0); assert.equal(report?.fetches, 0); assert.equal(report?.credits, 0);
     assert.equal(report?.codexJobs, 3); assert.equal(report?.archilExecs, 2); assert.deepEqual(report?.replaySource, replayState.researchReplay);
   } finally { if (previous === undefined) delete process.env.KEENABLE_API_KEY; else process.env.KEENABLE_API_KEY = previous; }
+});
+
+test('imported RFQ conditions reach both synthesis tracks and the evaluator with explicit eligibility uncertainty guidance', async () => {
+  const store = new MemoryStore();
+  const conditions = ['TEST ONLY: goods must have the specified domestic origin.', 'TEST ONLY: supplier eligibility requires buyer approval.', 'TEST ONLY: substitutions require written authorization.'];
+  const importedState: CaseState = { ...state, id: 'source-conditions-case', researchMode: 'saved research',
+    researchReplay: { caseId: 'prior-case', attemptId: 'prior-attempt' },
+    rfqSource: { id: 'uploaded-rfq-line-1', kind: 'document', diskId: null, diskName: null, path: 'rfq-uploads/test/source.json',
+      sha256: 'a'.repeat(64), revision: 'TEST ONLY revision', title: 'TEST ONLY complete RFQ', importedAt: '2026-11-11T00:00:00Z', warnings: conditions } };
+  const before = structuredClone(importedState);
+  const page: EvidencePage = { requestedUrl: finalUrl, url: finalUrl, title: 'TEST ONLY supplier evidence', markdown: raw,
+    extraction: '', fetchedAt: '2026-11-01T12:00:00Z', truncated: false, extractionUrl: finalUrl };
+  for (const track of ['english', 'chinese']) await store.put(`cases/prior-case/research/prior-attempt/${track}/input/raw_evidence.json`, [page]);
+  const jobs: ModelJob[] = [];
+  const uncertainty = 'TEST ONLY: technical relevance does not resolve the source eligibility and origin conditions.';
+  const service = new ResearchService({ store, events, diskId: 'dsk-test', verifierBundle: '// TEST ONLY verifier', onExec: () => {}, onUsage: () => {},
+    transport: (async () => { throw new Error('Saved evidence test must not access the network'); }) as typeof fetch,
+    model: { async run<T>(job: ModelJob): Promise<T> {
+      jobs.push(job);
+      assert.deepEqual((job.input as { sourceRequirementsAndWarnings: string[] }).sourceRequirementsAndWarnings, conditions);
+      for (const term of ['untrusted RFQ context', 'eligibility', 'country-of-origin', 'substitution', 'apparent incompatibilities', 'Technical fit alone']) assert.ok(job.instructions.includes(term), `${job.kind} retains ${term}`);
+      if (job.kind.endsWith('sourcing')) return { candidates: [structuredClone(draft)], uncertainties: [uncertainty] } as T;
+      const candidates = (job.input as { candidates: { supplierId: string }[] }).candidates;
+      return { selectedSupplierIds: [candidates[0]!.supplierId], uncertainties: [uncertainty] } as T;
+    } },
+    execute: async options => {
+      const mounts = options.disks as Record<string, { subdirectory: string }>;
+      const input = mounts.input!.subdirectory.replace('autonomous-sourcing/v1/', '');
+      const output = mounts.output!.subdirectory.replace('autonomous-sourcing/v1/', '');
+      const candidates = await store.get<CandidateDraft[]>(`${input}/candidate_drafts.json`);
+      const pages = await store.get<EvidencePage[]>(`${input}/raw_evidence.json`);
+      await store.put(`${output}/verified.json`, verifyCandidates(candidates!, pages!, DEMO_RFQ));
+      return { exitCode: 0, stdout: '', stderr: '' };
+    } });
+  const result = await service.run(importedState);
+  assert.deepEqual(jobs.map(job => job.kind).sort(), ['chinese sourcing', 'english sourcing', 'supplier evaluation']);
+  assert.equal(result.candidates.length, 1); assert.ok(result.uncertainties.includes(uncertainty));
+  assert.deepEqual(importedState, before);
 });
 
 test('saved research rejects absent, incomplete or invalid source evidence without synthetic or live fallback', async () => {

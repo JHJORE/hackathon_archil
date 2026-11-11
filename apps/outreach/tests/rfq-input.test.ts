@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseRfq, requireResearchConnection } from '../server/rfq-input.js';
+import { isOutreachReady, missingOutreachFields, parseRfq, requireOutreachReady, requireResearchConnection } from '../server/rfq-input.js';
 import { DEMO_RFQ } from '../server/fixtures.js';
 
 test('manual RFQ preserves supplied specifications and strips unrelated properties', () => {
@@ -26,4 +26,25 @@ test('real research cannot be acknowledged as started without its connection, bu
   assert.doesNotThrow(() => requireResearchConnection({ researchMode: 'live', researchComplete: false }, 'test-only'));
   assert.doesNotThrow(() => requireResearchConnection({ researchMode: 'saved research', researchComplete: false }, undefined));
   assert.doesNotThrow(() => requireResearchConnection({ researchMode: 'live', researchComplete: true }, undefined));
+});
+
+test('explicit unknown requirements are preserved for sourcing and block outreach with exact missing fields', () => {
+  const input = { description: 'Manufacturer part ABC-123', standard: null, size: null, grade: null, finish: null, quantity: null, currency: null, incoterm: null, destination: null, targetUnitPrice: null, maxUnitPrice: null, requiredBy: null };
+  const rfq = parseRfq(input)!;
+  assert.deepEqual(rfq, input); assert.equal(isOutreachReady(rfq), false);
+  assert.deepEqual(missingOutreachFields(rfq), ['standard', 'size', 'grade', 'finish', 'quantity', 'currency', 'incoterm', 'destination', 'targetUnitPrice', 'maxUnitPrice']);
+  assert.throws(() => requireOutreachReady(rfq), (error: any) => error.status === 428 && error.missingFields.includes('targetUnitPrice') && error.message.includes('standard'));
+  assert.equal(isOutreachReady(DEMO_RFQ), true); assert.doesNotThrow(() => requireOutreachReady(DEMO_RFQ));
+  assert.equal(parseRfq({ ...DEMO_RFQ, targetUnitPrice: null })?.targetUnitPrice, null);
+  assert.equal(parseRfq({ ...DEMO_RFQ, maxUnitPrice: null })?.maxUnitPrice, null);
+});
+
+test('null is explicit unknown data, but omitted or undefined RFQ keys and blank strings are rejected', () => {
+  for (const key of Object.keys(DEMO_RFQ)) {
+    const omitted = { ...DEMO_RFQ } as Record<string, unknown>; delete omitted[key];
+    assert.throws(() => parseRfq(omitted), (error: any) => error.status === 400, key);
+    assert.throws(() => parseRfq({ ...DEMO_RFQ, [key]: undefined }), (error: any) => error.status === 400, key);
+  }
+  for (const description of [null, '', '  ']) assert.throws(() => parseRfq({ ...DEMO_RFQ, description }), /description/);
+  for (const key of ['standard', 'size', 'grade', 'finish', 'currency', 'incoterm', 'destination']) assert.throws(() => parseRfq({ ...DEMO_RFQ, [key]: ' ' }), /RFQ requires/);
 });

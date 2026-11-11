@@ -7,6 +7,7 @@
     "html-to-text": "^10.0.1",
     "keenable": "^0.1.4",
     "libphonenumber-js": "^1.13.16",
+    "pdfjs-dist": "^6.5.438",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "tldts": "^7.4.21"

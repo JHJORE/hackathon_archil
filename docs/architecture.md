@@ -9,6 +9,9 @@ flowchart LR
     P["Scout producer<br/>code not yet included"] -. publishes .-> S[("Archil: rfq-scout")]
     S -->|read-only adapter| R["RFQ review"]
     M["Manual RFQ / fictional sample"] --> R
+    F["Uploaded PDF / TXT"] -->|persist original first| D
+    D --> X["Document extraction + source-quote checks"]
+    X -->|review and select product lines| R
     R -->|validated, fingerprint-bound import| O["Local orchestrator"]
     O <--> D[("Archil: out-reach")]
     O --> K["Keenable search + live fetch"]
@@ -31,7 +34,11 @@ The adapter reads `rfqs/latest.json` and the indexed `rfqs/open/<id>.json` recor
 
 The operator completes the requirement in the shared review form. `POST /api/scout/import` receives the reviewed RFQ and `{ id, sha256 }` source reference. The backend reloads the source, rejects changed revisions, validates the requirement, and preserves the source snapshot before creating an outreach case. Identical import retries reuse a deterministic case. The source fingerprint and the saved snapshot fingerprint have distinct meanings and remain attached to later evidence replays and email cases.
 
-An import alone neither launches research nor sends email. **Save & start sourcing** makes a separate start request after import succeeds. Manual case creation uses the same RFQ contract without a Scout dependency.
+Scout import alone neither launches research nor sends email. **Save & start sourcing** makes a separate start request after import succeeds. Manual case creation uses the same RFQ contract without a Scout dependency.
+
+Document uploads are another input to this dashboard. The backend saves the exact PDF/TXT bytes, fingerprint and receipt to the outreach disk before parsing and model extraction. Searchable documents are bounded at 10 MB, 100 PDF pages and 400,000 text characters. Extracted buying fields must have matching source-page quotations; unsupported values become `null`. Document requirements and unreadable-page warnings remain visible. There is no built-in OCR, and scanned documents need a searchable replacement.
+
+Review and line selection precede case creation. Each selected product becomes a separate case with its document provenance; an import may also request research. Research uses known requirements without substituting demo specifications or budgets. Required missing fields block email outreach and negotiation, while the delivery date remains a distinct uncertainty. Upload receipt recovery resumes unfinished extraction after a restart.
 
 ## Parallel research and verification
 
@@ -90,14 +97,16 @@ cases/<caseId>/
 
 Specific evidence paths are unique per attempt. Existing unrelated disk files are not overwritten. Immutable records are enforced by the application store abstraction; projections are intentionally mutable.
 
+Uploaded originals, receipts, extraction results and status live under `rfq-uploads/<uploadId>/` in the same outreach namespace. They are private application data, not repository assets. Selected-line imports preserve the source fingerprint and extraction evidence in each resulting case.
+
 The local `.env`, Codex authentication, and ignored `work/auth/` records are outside published source and worker inputs. Outreach raw email and evidence records are application data on the configured disk. Keep both the local delivery-operation records and the Archil journal when restarting or moving the local deployment.
 
 `APP_STORAGE=file` is an explicit test adapter. The app does not silently substitute local storage when Archil fails.
 
 ## Interfaces and validation
 
-The React client uses `/api/cases`, `/api/scout`, and `/api/email`; `/api/events` carries runtime snapshots and operational events. See the app README for endpoint details and `apps/outreach/shared/` for the TypeScript contracts.
+The React client uses `/api/cases`, `/api/scout`, `/api/rfq-uploads` and `/api/email`; `/api/events` carries runtime snapshots and operational events. Upload APIs accept raw document bodies, expose extraction status/original downloads, and import selected lines with an explicit research-start choice. See the app README for endpoint details and `apps/outreach/shared/` for the TypeScript contracts.
 
 Tests use isolated stores and fake providers for concurrency, strict schemas, grounding, false merges, stale imports, duplicate/conflicting messages, exact email approval, and partial-write recovery. Real connection rehearsals are separate from these automated tests.
 
-Current scope is a local, one-product-line procurement workflow. The Scout producer is pending; feed availability depends on external records and permissions. The app does not assess government procurement eligibility, submit bids, independently certify factories, accept orders, or move money.
+Current scope is a local procurement workflow with one product line per case; uploaded documents may supply multiple cases. The Scout producer is pending; feed availability depends on external records and permissions. The app does not assess government procurement eligibility, submit bids, independently certify factories, accept orders, or move money.

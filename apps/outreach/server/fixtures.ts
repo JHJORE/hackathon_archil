@@ -1,6 +1,7 @@
-import type { Rfq, Quote } from '../shared/types.js';
+import type { Rfq, Quote, OutreachRfq } from '../shared/types.js';
+import { requireOutreachReady } from './rfq-input.js';
 
-export const DEMO_RFQ: Rfq = {
+export const DEMO_RFQ: OutreachRfq = {
   description: 'Socket head cap screws for a manufacturing order',
   standard: 'ISO 4762', size: 'M8x30', grade: '12.9', finish: 'black oxide',
   quantity: 50000, currency: 'USD', incoterm: 'CIF', destination: 'Oakland',
@@ -8,6 +9,7 @@ export const DEMO_RFQ: Rfq = {
 };
 
 export function quoteMessage(rfq: Rfq, unitPrice: number, overrides: Partial<Quote> = {}): string {
+  requireOutreachReady(rfq);
   const quote: Quote = {
     unitPrice, currency: rfq.currency, quantity: rfq.quantity,
     standard: rfq.standard, size: rfq.size, grade: rfq.grade, finish: rfq.finish,
@@ -17,9 +19,11 @@ export function quoteMessage(rfq: Rfq, unitPrice: number, overrides: Partial<Quo
 }
 
 export function initialRfqMessage(rfq: Rfq): string {
+  requireOutreachReady(rfq);
   return `SIMULATED RFQ — in-app test inbox only.\nPlease quote ${rfq.quantity.toLocaleString('en-US')} pieces of ${rfq.standard} ${rfq.size}, grade ${rfq.grade}, ${rfq.finish}.\nQuote in ${rfq.currency}, ${rfq.incoterm} ${rfq.destination}. Please confirm every specification, quantity, unit price and lead time in days.${rfq.requiredBy ? ` Required by: ${rfq.requiredBy}.` : ' Required delivery date is not yet specified.'}\nThis is a request for quotation, not a purchase commitment.`;
 }
 
 export function counterMessage(rfq: Rfq): string {
+  requireOutreachReady(rfq);
   return `SIMULATED COUNTEROFFER — in-app test inbox only.\nCan you offer ${rfq.currency} ${rfq.targetUnitPrice.toFixed(3)} per piece for ${rfq.quantity.toLocaleString('en-US')} pieces of ${rfq.standard} ${rfq.size}, grade ${rfq.grade}, ${rfq.finish}, on ${rfq.incoterm} ${rfq.destination} terms?\nPlease retain all requested specifications and quantity, and confirm lead time. This inquiry does not place an order or accept a quote.`;
 }

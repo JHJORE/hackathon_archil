@@ -122,10 +122,11 @@ export function verifyCandidates(drafts: CandidateDraft[], pages: EvidencePage[]
     const uscc = usccValue && /^[0-9A-HJ-NPQRTUWXY]{18}$/.test(usccValue) && presentToken(usccValue, raw) ? usccValue : null;
     const icpValue = draft.identifiers.icp?.normalize('NFKC').replace(/\s+/g, '') ?? null;
     const icp = icpValue && /ICP备\d{6,}(?:号(?:-\d+)?)?/u.test(icpValue) && normalizeText(raw).replace(/\s+/g, '').includes(icpValue.toLowerCase()) ? icpValue : null;
-    const required = [rfq.standard, rfq.grade, rfq.finish, rfq.size].filter(Boolean);
+    const required = [rfq.standard, rfq.grade, rfq.finish, rfq.size].filter((value): value is string => value !== null && value.length > 0);
     const matched = required.filter(value => presentToken(value, raw));
     const ceiling = required.length ? Math.round(100 * matched.length / required.length) : 50;
-    const fitSummary = `Published text matches ${matched.length}/${required.length} requested technical terms${matched.length ? `: ${matched.join(', ')}` : ''}. Exact product, quantity, price and delivery require supplier confirmation.`;
+    const fitSummary = required.length ? `Published text matches ${matched.length}/${required.length} requested technical terms${matched.length ? `: ${matched.join(', ')}` : ''}. Exact product, quantity, price and delivery require supplier confirmation.` : 'No reviewed technical specifications were supplied. This is a sourcing lead; exact product, quantity, price and delivery remain unresolved.';
+    if (required.length < 4) notes.push('Some buyer technical requirements are unknown; website evidence cannot establish full specification compatibility.');
     notes.push('Public website matches are sourcing leads; exact specification, availability, MOQ and quote need supplier confirmation.');
     if (ownPages.some(page => page.truncated)) notes.push('At least one source page was truncated; missing information is unknown.');
     const fingerprints = ownPages.map(page => ({ url: page.url, sha256: fingerprint(page.markdown), fetchedAt: page.fetchedAt, truncated: page.truncated }));

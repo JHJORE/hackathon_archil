@@ -1,5 +1,5 @@
 import { randomUUID, createHash } from 'node:crypto';
-import { parseRfq } from './rfq-input.js';
+import { isOutreachReady, missingOutreachFields, parseRfq, requireOutreachReady, rfqUncertainties } from './rfq-input.js';
 import type { RfqProvenance, ScoutItem } from '../shared/scout.js';
 import type { AppEvent, CaseDetail, CaseState, EventBus, IncomingMessage, Message, ModelGateway, NegotiationResult, ResearchPipeline, Rfq, Store, SupplierState } from '../shared/types.js';
 import { DEMO_RFQ, counterMessage, initialRfqMessage, quoteMessage } from './fixtures.js';
@@ -23,12 +23,9 @@ function sameIncoming(a: Pick<Message, 'messageId' | 'caseId' | 'supplierId' | '
   return a.messageId === b.messageId && a.caseId === b.caseId && a.supplierId === b.supplierId && a.text === b.text;
 }
 function validateRfq(rfq: Rfq): Rfq {
-  for (const field of ['description', 'standard', 'size', 'grade', 'finish', 'currency', 'incoterm', 'destination'] as const) {
-    if (typeof rfq[field] !== 'string' || !rfq[field].trim()) throw new Error(`RFQ requires ${field}`);
-  }
-  if (!Number.isInteger(rfq.quantity) || rfq.quantity <= 0 || !Number.isFinite(rfq.targetUnitPrice) || rfq.targetUnitPrice <= 0 || !Number.isFinite(rfq.maxUnitPrice) || rfq.maxUnitPrice < rfq.targetUnitPrice) throw new Error('RFQ quantity and price bounds are invalid');
-  if (rfq.requiredBy !== null && (typeof rfq.requiredBy !== 'string' || !Number.isFinite(Date.parse(rfq.requiredBy)))) throw new Error('RFQ requiredBy must be a date or null');
-  return clone(rfq);
+  const parsed = parseRfq(rfq);
+  if (!parsed) throw new Error('RFQ requirements are missing');
+  return parsed;
 }
 
 /** One local process owns case projections; models never hold the commit mutex. */
@@ -100,7 +97,7 @@ export class Orchestrator {
     const now = new Date().toISOString();
     const state: CaseState = {
       id: randomUUID(), createdAt: now, updatedAt: now, rfq: validateRfq(rfq), status: 'ready',
-      suppliers: [], uncertainties: rfq.requiredBy === null ? ['Required delivery date is not specified; confirm it before purchasing.'] : [],
+      suppliers: [], uncertainties: rfqUncertainties(rfq),
       holdProcessingMs: 0, researchComplete: false, researchAttempt: null, error: null, researchMode,
       ...(researchReplay ? { researchReplay: clone(researchReplay) } : {}),
       ...(rfqSource ? { rfqSource: clone(rfqSource) } : {}),
@@ -128,7 +125,7 @@ export class Orchestrator {
       const now = new Date().toISOString();
       const state: CaseState = {
         id: caseId, createdAt: now, updatedAt: now, rfq: validated, status: 'ready', suppliers: [],
-        uncertainties: [...item.warnings, ...(validated.requiredBy === null ? ['Required delivery date is not specified.'] : [])],
+        uncertainties: [...item.warnings, ...rfqUncertainties(validated)],
         holdProcessingMs: 0, researchComplete: false, researchAttempt: null, error: null, researchMode: 'live',
         rfqSource: { ...clone(item.source), title: item.title, warnings: [...item.warnings], importedAt: now, snapshotKey, snapshotSha256: createHash('sha256').update(raw).digest('hex') },
       };
@@ -193,9 +190,11 @@ export class Orchestrator {
       for (const candidate of unique) if (!validId(candidate.supplierId)) throw new Error('Research returned an invalid supplier ID');
       await this.lock(id, async () => {
         const latest = await this.read(id);
-        latest.suppliers = unique.map(supplier => ({ supplier, status: 'awaiting reply', round: 0, latestOffer: null, originalOffer: null, explanation: 'RFQ ready for the in-app simulator.', unread: 0, nextAction: 'Await a simulated supplier response.' }));
+        const ready = isOutreachReady(latest.rfq);
+        const review = `Review missing RFQ fields before outreach: ${missingOutreachFields(latest.rfq).join(', ')}.`;
+        latest.suppliers = unique.map(supplier => ({ supplier, status: ready ? 'awaiting reply' : 'needs attention', round: 0, latestOffer: null, originalOffer: null, explanation: ready ? 'RFQ ready for the in-app simulator.' : 'Supplier research is complete; buyer requirements remain unresolved.', unread: 0, nextAction: ready ? 'Await a simulated supplier response.' : review }));
         latest.uncertainties = [...new Set([...latest.uncertainties, ...result.uncertainties, ...(unique.length < 3 ? [`Only ${unique.length} supported supplier candidates were found.`] : [])])];
-        latest.researchComplete = true; latest.status = 'awaiting replies'; latest.error = null;
+        latest.researchComplete = true; latest.status = ready ? 'awaiting replies' : 'needs attention'; latest.error = null;
         await this.save(latest);
       });
       await this.event('research.completed', `Shortlisted ${unique.length} source-backed supplier candidates.`, id);
@@ -207,7 +206,7 @@ export class Orchestrator {
   private async ensureInitialMessages(id: string): Promise<void> {
     await this.lock(id, async () => {
       const state = await this.read(id);
-      if (state.communicationMode === 'email') return;
+      if (state.communicationMode === 'email' || !isOutreachReady(state.rfq)) return;
       for (const s of state.suppliers) {
         const message: Message = { messageId: `rfq-${id}-${s.supplier.supplierId}`, caseId: id, supplierId: s.supplier.supplierId, text: initialRfqMessage(state.rfq), direction: 'outbound', simulated: true, createdAt: state.createdAt };
         await this.writeOutgoing(message);
@@ -424,6 +423,7 @@ export class Orchestrator {
     const state = await this.read(id);
     if (state.communicationMode === 'email') throw new Error('Simulator controls are disabled in email outreach cases.');
     if (!state.suppliers.length) throw new Error('Finish supplier research before using the simulator');
+    requireOutreachReady(state.rfq);
     const requests: Omit<IncomingMessage, 'caseId'>[] = [];
     if (action === 'initial-quotes') {
       state.suppliers.forEach((s, i) => requests.push({ messageId: `demo-initial-${s.supplier.supplierId}`, supplierId: s.supplier.supplierId, text: quoteMessage(state.rfq, [0.075, 0.079, 0.081][i] ?? 0.079) }));

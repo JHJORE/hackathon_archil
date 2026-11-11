@@ -23,8 +23,11 @@ import { ScoutService } from './scout.js';
 import { scoutRoutes } from './scout-routes.js';
 import type { EmailStatus } from '../shared/email.js';
 import { storageConfiguration } from './runtime-config.js';
+import { RfqUploadService } from './rfq-upload.js';
+import { rfqUploadRoutes } from './rfq-upload-routes.js';
+import { rfqUploadSchema } from './rfq-upload-schema.js';
 
-for (const schema of [researchSynthesisSchema, evaluatorSchema, negotiationSchema, emailNegotiationSchema]) assertStrictSchema(schema);
+for (const schema of [researchSynthesisSchema, evaluatorSchema, negotiationSchema, emailNegotiationSchema, rfqUploadSchema]) assertStrictSchema(schema);
 
 const port=Number(process.env.PORT||4310);
 const { diskId, storagePrefix, localStorage }=storageConfiguration();
@@ -43,6 +46,7 @@ const research=new ResearchService({store,model,events,diskId,storagePrefix,
 });
 const mail=new AgentMailProvider();
 const orchestrator=new Orchestrator({store,model,research,events,mail});
+const uploads=new RfqUploadService({store,model,events});
 let emailRefresh:Promise<EmailStatus>|null=null;
 function refreshEmail():Promise<EmailStatus>{
   if(emailRefresh)return emailRefresh;
@@ -64,6 +68,7 @@ const id=(value:unknown)=>{if(typeof value!=='string'||!/^[a-zA-Z0-9_-]{1,120}$/
 const ready=()=>{if(!recovered)throw Object.assign(new Error(startupError||'Recovering persisted cases; try again shortly'),{status:503});};
 app.use('/api', scoutRoutes({ scout: new ScoutService(), orchestrator, ready }));
 app.use('/api',emailRoutes({orchestrator,mail,ready,refresh:refreshEmail}));
+app.use('/api',rfqUploadRoutes({uploads,orchestrator,events,ready}));
 app.get('/api/health',(_req,res)=>res.json({ready:recovered,error:startupError}));
 app.get('/api/runtime',(_req,res)=>res.json(snapshot()));
 app.get('/api/events',(req,res)=>{
@@ -107,7 +112,7 @@ app.use((error:any,_req:express.Request,res:express.Response,_next:express.NextF
 });
 const server=app.listen(port,'127.0.0.1',()=>{
   console.log(`Source Control → http://127.0.0.1:${port}`);
-  void orchestrator.recover().then(async()=>{recovered=true;events.emit('recovery.complete','Archil reconciliation complete; inbox monitoring is active');await refreshEmail();pushSnapshot();})
+  void orchestrator.recover().then(()=>uploads.recover()).then(async()=>{recovered=true;events.emit('recovery.complete','Archil reconciliation complete; inbox monitoring is active');await refreshEmail();pushSnapshot();})
     .catch(error=>{startupError=redact(error.message);events.emit('recovery.error',startupError);console.error(startupError);});
 });
 let polling=false;

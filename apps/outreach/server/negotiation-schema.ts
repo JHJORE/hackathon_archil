@@ -1,4 +1,5 @@
 import type { NegotiationResult, Quote, Rfq, SupplierState } from '../shared/types.js';
+import { isOutreachReady, missingOutreachFields } from './rfq-input.js';
 
 const nullableString = { type: ['string', 'null'] };
 const nullableNumber = { type: ['number', 'null'] };
@@ -43,6 +44,7 @@ function normalized(key: string, value: string): string {
 export function evaluateQuote(rfq: Rfq, quote: Quote, previous: SupplierState): {
   status: SupplierState['status']; explanation: string; nextAction: string; counter: boolean;
 } {
+  if (!isOutreachReady(rfq)) return { status: 'needs attention', explanation: `Unresolved RFQ fields: ${missingOutreachFields(rfq).join(', ')}.`, nextAction: 'Review the missing buyer requirements before negotiating or judging a price target.', counter: false };
   const missing = Object.entries(quote).filter(([key, value]) => key !== 'notes' && (value === null || value === '')).map(([key]) => key);
   if (missing.length) return { status: 'needs attention', explanation: `Unresolved quote fields: ${missing.join(', ')}.`, nextAction: 'Clarify the missing terms; no counteroffer sent.', counter: false };
   const mismatches: string[] = [];

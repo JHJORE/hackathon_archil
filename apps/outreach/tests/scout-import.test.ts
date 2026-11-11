@@ -115,8 +115,19 @@ test('reviewed RFQ unknown fields are stripped and property order does not chang
   assert.equal('unreviewedInternalNote' in second.rfq, false);
 });
 
-test('incomplete reviewed requirements fail before preserving a runnable import', async () => {
+test('omitted requirement keys fail before preserving a runnable import', async () => {
   const { app, store } = setup();
   await assert.rejects(app.importRfq(itemFor(), rawSource, { description: 'Only a vague request' } as Rfq), /RFQ requires/);
   assert.equal(store.values.size, 0);
+});
+
+test('explicit unknown source requirements import without inventing quantities, specifications or budget', async () => {
+  const { app, store, calls } = setup();
+  const unknown: Rfq = { description: 'Manufacturer part ABC-123', standard: null, size: null, grade: null, finish: null, quantity: null, currency: null, incoterm: null, destination: null, targetUnitPrice: null, maxUnitPrice: null, requiredBy: null };
+  const imported = await app.importRfq(itemFor(), rawSource, unknown);
+  assert.deepEqual(imported.rfq, unknown); assert.equal(imported.status, 'ready');
+  assert.ok(imported.uncertainties.some(value => value.includes('targetUnitPrice') && value.includes('quantity')));
+  assert.deepEqual(await store.get(`cases/${imported.id}/rfq.json`), unknown);
+  assert.deepEqual(calls(), { researchCalls: 0, modelCalls: 0 });
+  assert.deepEqual(await store.list(`cases/${imported.id}/outbox/`), []);
 });

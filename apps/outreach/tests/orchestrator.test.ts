@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { Orchestrator } from '../server/orchestrator.js';
 import { DEMO_RFQ, quoteMessage } from '../server/fixtures.js';
-import type { AppEvent, Candidate, EventBus, ModelGateway, ModelJob, NegotiationResult, Quote, Store } from '../shared/types.js';
+import { evaluateQuote } from '../server/negotiation-schema.js';
+import type { AppEvent, Candidate, EventBus, ModelGateway, ModelJob, NegotiationResult, Quote, Rfq, Store } from '../shared/types.js';
 
 class MemoryStore implements Store {
   objects = new Map<string, unknown>();
@@ -99,6 +100,36 @@ test('target met still requires matching specs, quantity and all quoted terms', 
   assert.equal(detail.state.suppliers[2].status, 'target met');
   assert.equal(detail.state.suppliers[2].round, 0);
   assert.match(detail.state.uncertainties.join(' '), /delivery date/);
+});
+
+test('description-only RFQ completes research and recovery without fabricated terms or outgoing messages', async () => {
+  const store = new MemoryStore(), model = new FakeModel(), events = new Bus();
+  const rfq: Rfq = { description: 'Industrial motor, manufacturer part ABC-123', standard: null, size: null, grade: null, finish: null, quantity: null, currency: null, incoterm: null, destination: null, targetUnitPrice: null, maxUnitPrice: null, requiredBy: null };
+  const research = { run: async (state: { rfq: Rfq }) => { assert.deepEqual(state.rfq, rfq); return { candidates: [candidate('motor-maker')], uncertainties: [] }; } };
+  const app = new Orchestrator({ store, model, events, research });
+  const created = await app.create(rfq); await app.start(created.id);
+  const detail = await app.detail(created.id);
+  assert.deepEqual(detail.state.rfq, rfq); assert.equal(detail.state.researchComplete, true);
+  assert.equal(detail.state.status, 'needs attention'); assert.equal(detail.state.error, null);
+  assert.match(detail.state.suppliers[0].nextAction, /targetUnitPrice/);
+  assert.deepEqual(detail.conversations['motor-maker'], []);
+  assert.deepEqual(await store.list(`cases/${created.id}/outbox/`), []);
+  await assert.rejects(app.demo(created.id, 'initial-quotes'), (error: any) => error.status === 428);
+  const restarted = new Orchestrator({ store, model, events, research }); await restarted.recover(); await restarted.waitForIdle();
+  assert.deepEqual((await restarted.detail(created.id)).state.rfq, rfq);
+  assert.deepEqual(await store.list(`cases/${created.id}/outbox/`), []); assert.equal(model.jobs.length, 0);
+});
+
+test('unknown buyer requirements never produce target-met decisions or counteroffers', async () => {
+  const { app, id } = await setup();
+  const previous = (await app.detail(id)).state.suppliers[0];
+  for (const key of ['standard', 'size', 'grade', 'finish', 'quantity', 'currency', 'incoterm', 'destination', 'targetUnitPrice', 'maxUnitPrice'] as const) {
+    for (const price of [0.064, 0.075]) {
+      const result = evaluateQuote({ ...DEMO_RFQ, [key]: null }, quote(price), previous);
+      assert.equal(result.status, 'needs attention', key); assert.equal(result.counter, false, key);
+      assert.ok(result.explanation.includes(key));
+    }
+  }
 });
 
 for (const crashAt of ['decision-saved', 'offer-saved', 'outbox-saved', 'state-saved']) {

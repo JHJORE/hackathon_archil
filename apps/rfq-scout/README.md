@@ -1,6 +1,6 @@
 # RFQ Scout producer handoff
 
-The original Scout producer source is **not included in this submission**. The connected Archil disk contains published RFQ data and runtime artifacts, not runnable producer code or a package manifest. There is no producer install/start command to run from this directory yet.
+The original Scout producer source is **not included in this submission**. Inspection of the connected Scout disk found published RFQ data and runtime artifacts, with no runnable producer code or package manifest. The sole sandbox accessible in the inspected account and region contained the stock Node/Yarn environment; it was restored to its original stopped state. This does not rule out source in another account, region, computer or cofounder workspace. There is no producer install/start command to run from this directory yet.
 
 The working dashboard and read-only bridge are in [`../outreach`](../outreach/). They can consume the existing feed when the configured Archil credentials have access. Manual RFQ creation does not depend on a running Scout producer.
 
