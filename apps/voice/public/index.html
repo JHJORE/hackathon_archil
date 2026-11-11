@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Buyer Finder</title>
+<style>
+:root{--bg:#f6f5f1;--card:#fff;--ink:#1b1b18;--mute:#6b6a63;--line:#e3e1d9;--acc:#1f5f4a;--warn:#a5462b;--chip:#ecebe5;--good:#dcefe6;--bad:#f6ddd5;--log:#111;--logink:#cfe}
+@media (prefers-color-scheme:dark){:root{--bg:#141412;--card:#1d1d1a;--ink:#ecebe5;--mute:#9a988f;--line:#2e2d29;--acc:#5fbf9a;--warn:#e08a6a;--chip:#2a2925;--good:#1f3a30;--bad:#45251c;--log:#000;--logink:#bfe8d4}}
+*{box-sizing:border-box}body{margin:0;font:14px/1.45 ui-sans-serif,system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--ink)}
+header{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;padding:18px 24px;border-bottom:1px solid var(--line)}
+h1{font-size:18px;margin:0}h2{font-size:15px;margin:0 0 8px}h3{font-size:14px;margin:0}small,.mute{color:var(--mute)}a{color:var(--acc)}
+main{padding:16px 24px;display:grid;gap:14px;max-width:1200px;margin:0 auto}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px;min-width:0}
+.grid{display:grid;gap:10px;grid-template-columns:repeat(auto-fill,minmax(min(220px,100%),1fr))}
+label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--mute)}
+input,select,textarea,button{font:inherit;padding:7px 10px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink)}
+textarea{min-height:70px;resize:vertical}
+button{background:var(--acc);color:#fff;border-color:var(--acc);cursor:pointer}button.ghost{background:transparent;color:var(--acc)}button:disabled{opacity:.5;cursor:wait}
+pre{background:var(--log);color:var(--logink);padding:10px;border-radius:8px;max-height:260px;overflow:auto;font-size:12px;margin:0;white-space:pre-wrap}
+.tag{display:inline-block;padding:1px 7px;border-radius:99px;background:var(--chip);font-size:12px}.good{background:var(--good)}.bad{background:var(--bad)}
+.ladder{display:flex;gap:8px;flex-wrap:wrap}.ladder div{padding:8px 10px;border:1px solid var(--line);border-radius:8px}.ladder b{display:block;font-size:16px}
+.buyer{display:flex;flex-direction:column;gap:6px}.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.script{background:var(--bg);border-radius:8px;padding:10px;font-size:13px;white-space:pre-wrap;max-height:320px;overflow:auto}
+.turn{margin:4px 0}.turn b{color:var(--acc)}
+@media (max-width:600px){header,main{padding-left:16px;padding-right:16px}}
+</style>
+</head>
+<body>
+<header>
+  <div><h1>Buyer Finder</h1><small>Upload a spec → swarm finds buyers → personalized AI calls with price guardrails</small></div>
+  <div class="row"><select id="pick"><option value="">past campaigns…</option></select></div>
+</header>
+<main>
+  <section class="card" id="new">
+    <h2>New campaign</h2>
+    <div class="grid">
+      <label>Spec sheet (PDF, max 3 MB)<input type="file" id="pdf" accept="application/pdf"></label>
+      <label>Quoted price (floor — never go below) *<input id="quoted" type="number" step="0.01" placeholder="e.g. 41.50"></label>
+      <label>Opening price (optional, default +12%)<input id="list" type="number" step="0.01"></label>
+      <label>Unit<input id="unit" placeholder="per linear foot"></label>
+      <label>Your company<input id="company" placeholder="Acme Pipe Supply"></label>
+      <label>Rep name for calls<input id="rep" value="Alex"></label>
+      <label>Access key<input id="key" type="password" placeholder="VOICE_ACCESS_KEY"></label>
+    </div>
+    <label style="margin-top:10px">…or paste the spec text<textarea id="spectext" placeholder="Product, specs, standards…"></textarea></label>
+    <div class="row" style="margin-top:10px"><button id="start">Find buyers</button><small>Prices are ex-works. Delivery is always excluded and settled last.</small></div>
+    <pre id="log" hidden></pre>
+  </section>
+  <section id="view"></section>
+</main>
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const params = new URLSearchParams(location.search);
+try { $("#key").value = params.get("key") || localStorage.getItem("voiceKey") || ""; } catch { $("#key").value = params.get("key") || ""; }
+const hdr = () => ({ "content-type": "application/json", "x-voice-key": $("#key").value });
+let state = null;
+
+async function listCampaigns() {
+  const j = await (await fetch("/api/campaigns")).json();
+  $("#pick").innerHTML = '<option value="">past campaigns…</option>' + (j.campaigns || []).map((c) => `<option value="${c.id}">${esc(c.product)} · ${c.buyers} buyers · ${c.created_at.slice(0, 16).replace("T", " ")}</option>`).join("");
+}
+$("#pick").onchange = () => $("#pick").value && open($("#pick").value);
+
+$("#start").onclick = async () => {
+  try { localStorage.setItem("voiceKey", $("#key").value); } catch {}
+  const file = $("#pdf").files[0];
+  if (!$("#quoted").value) return alert("Enter the quoted price (the floor).");
+  if (!file && !$("#spectext").value.trim()) return alert("Upload a PDF or paste the spec text.");
+  if (file && file.size > 3e6) return alert("PDF must be under 3 MB.");
+  const pdf_base64 = file ? await new Promise((r) => { const fr = new FileReader(); fr.onload = () => r(fr.result.split(",")[1]); fr.readAsDataURL(file); }) : undefined;
+  $("#start").disabled = true; const log = $("#log"); log.hidden = false; log.textContent = "starting…\n";
+  try {
+    const res = await fetch("/api/campaigns", { method: "POST", headers: hdr(), body: JSON.stringify({
+      filename: file?.name, pdf_base64, spec_text: $("#spectext").value || undefined, quoted_price: $("#quoted").value,
+      list_price: $("#list").value || undefined, unit: $("#unit").value || undefined, company: $("#company").value || undefined, rep_name: $("#rep").value,
+    }) });
+    if (!res.ok) throw new Error(res.status + " " + (await res.text()));
+    const rd = res.body.getReader(), dec = new TextDecoder(); log.textContent = "";
+    for (;;) { const { done, value } = await rd.read(); if (done) break; log.textContent += dec.decode(value, { stream: true }); log.scrollTop = 1e9; }
+    const id = log.textContent.match(/CAMPAIGN (c-[\w-]+)/)?.[1];
+    if (id) { await listCampaigns(); await open(id); }
+  } catch (e) { log.textContent += "\n" + e.message; }
+  $("#start").disabled = false;
+};
+
+async function open(id) {
+  history.replaceState(null, "", `?c=${id}`);
+  state = await (await fetch(`/api/campaigns?id=${id}`)).json();
+  render();
+}
+
+function render() {
+  const { campaign: c, buyers, scripts, calls } = state;
+  const p = c.product, L = c.ladder, unit = esc(c.pricing.unit);
+  const top = (c.top_buyers || []).map((id) => buyers.find((b) => b.id === id)).filter(Boolean);
+  const rest = buyers.filter((b) => !top.includes(b));
+  $("#view").innerHTML = `
+  <div class="card"><h2>${esc(p.product_name)} <small>${esc(p.category)}</small></h2>
+    <div>${esc(p.summary)}</div>
+    <div class="row" style="margin:8px 0">${p.standards.map((s) => `<span class="tag">${esc(s)}</span>`).join("")}</div>
+    <div class="ladder">
+      <div><small>Opening</small><b>$${L.list}</b></div><div><small>Concession 1</small><b>$${L.step2}</b></div>
+      <div><small>Concession 2</small><b>$${L.step3}</b></div><div class="bad"><small>Floor (quoted, enforced)</small><b>$${L.floor}</b></div>
+      <div><small>Unit</small><b>${unit}</b></div><div class="good"><small>Delivery</small><b>excluded · last</b></div>
+    </div></div>
+  <div class="card"><h2>Top ${top.length} buyers</h2><div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(min(360px,100%),1fr))">
+    ${top.map((b) => buyerCard(b, scripts.find((s) => s.buyer_id === b.id), calls.filter((x) => x.buyer_id === b.id))).join("")}
+  </div>${rest.length ? `<small>${rest.length} more candidates on disk.</small>` : ""}</div>`;
+}
+
+function buyerCard(b, s, calls) {
+  return `<div class="card buyer" id="${b.id}">
+    <div class="row"><span class="tag ${b.fit_score >= 8 ? "good" : ""}">fit ${b.fit_score}/10</span><span class="tag">${esc(b.buyer_type)}</span><span class="tag">${esc(b.found_by)}</span></div>
+    <h3>${esc(b.org)}</h3><small>${esc(b.location)}</small>
+    <div><b>Signal:</b> ${esc(b.buying_signal)}</div>
+    <div class="mute">${esc(b.why_fit)}</div>
+    <small>${esc([b.contact_name, b.contact_title, b.phone, b.email].filter(Boolean).join(" · ") || "no contact found")} · <a href="${esc(b.evidence_url)}" target="_blank" rel="noopener">evidence</a></small>
+    <div class="row"><button class="ghost" onclick="script('${b.id}')">${s ? "Rewrite script" : "Write script"}</button>
+      ${s ? `<button onclick="talk('${b.id}')">Talk in browser</button><button class="ghost" onclick="call('${b.id}')">Phone call</button><label class="row" style="flex-direction:row;font-size:12px"><input type="checkbox" id="live-${b.id}"> live (ring buyer)</label>` : ""}</div>
+    <div id="live-panel-${b.id}"></div>
+    ${s ? `<details><summary>Call script</summary><div class="script"><b>Opening:</b> ${esc(s.first_message)}\n\n<b>Hooks:</b>\n- ${s.personalization_hooks.map(esc).join("\n- ")}\n\n${esc(s.call_brief)}</div></details>` : ""}
+    ${calls.map(callView).join("")}
+  </div>`;
+}
+
+function callView(x) {
+  const flags = x.guardrail_flags || [];
+  return `<div class="card" style="padding:10px"><div class="row"><span class="tag">${esc(x.mode)}</span><span class="tag">${esc(x.status)}</span>
+    ${x.audited_at ? `<span class="tag ${flags.length ? "bad" : "good"}">${flags.length ? flags.length + " guardrail flags" : "guardrails OK"}</span>` : ""}
+    <button class="ghost" onclick="audit('${x.conversation_id}')">Refresh transcript</button></div>
+    ${x.summary ? `<div>${esc(x.summary)}</div>` : ""}${flags.map((f) => `<div class="tag bad">${esc(f)}</div>`).join("")}
+    ${x.transcript ? `<details><summary>Transcript (${x.transcript.length} turns)</summary>${x.transcript.map((t) => `<div class="turn"><b>${esc(t.role)}:</b> ${esc(t.message)}${t.tools?.length ? ` <span class="tag">${esc(t.tools.join(","))}</span>` : ""}</div>`).join("")}</details>` : ""}</div>`;
+}
+
+async function post(body) {
+  const r = await fetch("/api/call", { method: "POST", headers: hdr(), body: JSON.stringify({ campaign_id: state.campaign.id, ...body }) });
+  const j = await r.json().catch(() => ({ error: r.status + "" }));
+  if (j.error) throw new Error(j.error);
+  return j;
+}
+async function script(id) {
+  const btn = document.querySelector(`#${id} button`); btn.disabled = true; btn.textContent = "Writing…";
+  try { await post({ buyer_id: id, action: "script" }); await open(state.campaign.id); } catch (e) { alert(e.message); btn.disabled = false; }
+}
+async function call(id) {
+  const b = state.buyers.find((x) => x.id === id), live = $(`#live-${id}`).checked;
+  const msg = live ? `LIVE call to ${b.org} at ${b.phone}.\nThe agent discloses it is an AI, never goes below $${state.campaign.ladder.floor}, and excludes delivery.\nPlace the call?`
+                   : `Demo call: your demo phone will ring with the script personalized for ${b.org}. Place the call?`;
+  if (!confirm(msg)) return;
+  try { const j = await post({ buyer_id: id, action: "call", approved: true, live }); alert(`Calling (${j.call.mode}). Conversation ${j.call.conversation_id}`); await open(state.campaign.id); }
+  catch (e) { alert(e.message); }
+}
+async function audit(conv) {
+  const r = await fetch(`/api/call?campaign_id=${state.campaign.id}&conversation_id=${conv}`, { headers: hdr() });
+  const j = await r.json(); if (j.error) return alert(j.error);
+  await open(state.campaign.id);
+}
+window.script = script; window.call = call; window.audit = audit; window.post = post; window.getState = () => state; window.reopen = () => open(state.campaign.id);
+listCampaigns(); if (params.get("c")) open(params.get("c"));
+</script>
+<script type="module">
+// Browser call: same ElevenLabs agent, personalized script, price_check guardrail and audit,
+// over the laptop mic/speaker (no phone provider needed). Someone at the table plays the buyer.
+import { Conversation } from "https://cdn.jsdelivr.net/npm/@elevenlabs/client@1.30.0/+esm";
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+let active = null;
+window.talk = async (buyerId) => {
+  if (active) return alert("A call is already running.");
+  const st = window.getState(), b = st.buyers.find((x) => x.id === buyerId);
+  if (!confirm(`Start a browser call as ${st.campaign.seller.rep_name} (AI) pitching to ${b.org}?\nSomeone plays the buyer on this laptop's mic. Floor $${st.campaign.ladder.floor}, delivery excluded.`)) return;
+  const panel = document.getElementById(`live-panel-${buyerId}`);
+  panel.innerHTML = `<div class="card" style="padding:10px"><div class="row"><span class="tag good" id="cstat">connecting…</span><button id="hang">End call</button></div><div id="lines" class="script" style="margin-top:8px"></div></div>`;
+  const lines = panel.querySelector("#lines"), stat = panel.querySelector("#cstat");
+  try {
+    await navigator.mediaDevices.getUserMedia({ audio: true });
+    const s = await window.post({ buyer_id: buyerId, action: "web", approved: true });
+    active = await Conversation.startSession({
+      signedUrl: s.signed_url,
+      dynamicVariables: s.dynamic_variables,
+      onConnect: async () => {
+        stat.textContent = "live";
+        const id = active?.getId?.();
+        if (id) await window.post({ buyer_id: buyerId, action: "web-started", conversation_id: id }).catch(() => {});
+      },
+      onModeChange: (m) => { stat.textContent = m.mode === "speaking" ? "agent speaking" : "listening"; },
+      onMessage: (m) => { lines.innerHTML += `<div class="turn"><b>${m.source === "ai" ? "agent" : "buyer"}:</b> ${esc(m.message)}</div>`; lines.scrollTop = 1e9; },
+      onError: (e) => { lines.innerHTML += `<div class="tag bad">${esc(e?.message || e)}</div>`; },
+      onDisconnect: async () => {
+        const id = active?.getId?.(); active = null; stat.textContent = "ended — auditing…";
+        if (id) { await new Promise((r) => setTimeout(r, 6000)); await window.audit(id).catch(() => {}); }
+      },
+    });
+    panel.querySelector("#hang").onclick = () => active?.endSession();
+  } catch (e) { active = null; panel.innerHTML = `<div class="tag bad">${esc(e.message)}</div>`; }
+};
+</script>
+</body>
+</html>

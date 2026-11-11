@@ -19,6 +19,7 @@ One local procurement dashboard combines RFQ Scout, parallel manufacturer resear
 ```text
 apps/outreach/        Unified dashboard, orchestrator, integrations, tests
 apps/rfq-scout/       Producer handoff; original source not yet included
+apps/voice/           Sell side: spec upload -> private-buyer swarm -> ElevenLabs calls (see apps/voice/README.md)
 docs/architecture.md
 ```
 

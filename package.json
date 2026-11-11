@@ -15,6 +15,9 @@
     "dev": "npm --prefix apps/outreach run dev",
     "dev:web": "npm --prefix apps/outreach run dev:web",
     "connect:keenable": "npm --prefix apps/outreach run connect:keenable",
-    "connect:email": "npm --prefix apps/outreach run connect:email"
+    "connect:email": "npm --prefix apps/outreach run connect:email",
+    "voice:setup": "npm --prefix apps/voice install",
+    "voice:start": "npm --prefix apps/voice start",
+    "voice:test": "npm --prefix apps/voice test"
   }
 }
