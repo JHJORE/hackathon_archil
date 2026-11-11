@@ -338,3 +338,15 @@ test('saved fallback failure stops after one attempt and remains recoverable',as
  let calls=0;research.run=async()=>{calls++;throw new Error('Model unavailable');};
  const next=await app.create();await assert.rejects(app.start(next.id),/Model unavailable/);assert.equal(calls,2);assert.equal((await app.detail(next.id)).state.status,'error');
 });
+
+test('restart preserves an RFQ sent by an older message template',async()=>{
+ const {app,id,store}=await setup();
+ for(const supplier of (await app.detail(id)).state.suppliers){
+  const sid=supplier.supplier.supplierId;const key=`cases/${id}/outbox/rfq-${id}-${sid}.json`;
+  const message=await store.get<any>(key);message.text='Earlier reviewed RFQ wording';await store.put(key,message);
+  await store.put(`cases/${id}/conversations/${sid}.json`,[message]);
+ }
+ const restarted=new Orchestrator({store,model:new FakeModel(),events:new Bus(),research:{run:async()=>{throw new Error('Must not repeat research');}}});
+ await restarted.recover();
+ const detail=await restarted.detail(id);assert.ok(Object.values(detail.conversations).every(messages=>messages.length===1&&messages[0].text==='Earlier reviewed RFQ wording'));
+});

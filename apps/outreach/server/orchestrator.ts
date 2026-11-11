@@ -223,7 +223,10 @@ export class Orchestrator {
       const state = await this.read(id);
       if (state.communicationMode === 'email' || !isOutreachReady(state.rfq)) return;
       for (const s of state.suppliers) {
-        const message: Message = { messageId: `rfq-${id}-${s.supplier.supplierId}`, caseId: id, supplierId: s.supplier.supplierId, text: initialRfqMessage(state.rfq), direction: 'outbound', simulated: true, createdAt: state.createdAt };
+        const messageId = `rfq-${id}-${s.supplier.supplierId}`;
+        const saved = await this.store.get<Message>(`${this.base(id)}/outbox/${messageId}.json`);
+        if (saved && (saved.caseId !== id || saved.supplierId !== s.supplier.supplierId || saved.messageId !== messageId || saved.direction !== 'outbound' || !saved.simulated)) throw new Error('Saved RFQ message identity conflict');
+        const message: Message = saved ?? { messageId, caseId: id, supplierId: s.supplier.supplierId, text: initialRfqMessage(state.rfq), direction: 'outbound', simulated: true, createdAt: state.createdAt };
         await this.writeOutgoing(message);
       }
     });
