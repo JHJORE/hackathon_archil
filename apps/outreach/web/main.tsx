@@ -73,13 +73,14 @@ function App() {
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const readRequests = useRef(new Set<string>());
   const refreshing = useRef(false);
+  const healthyAt = useRef(0);
   selectedRef.current = selected;
 
   const refresh = useCallback(async () => {
     if (refreshing.current) return; refreshing.current = true;
     try {
       const [result, currentRuntime, currentEmail] = await Promise.all([api<{ cases: CaseState[] }>('/api/cases'), api<RuntimeSnapshot>('/api/runtime'), api<EmailStatus>('/api/email/status').catch(() => null)]);
-      setRuntime(currentRuntime);
+      setRuntime(currentRuntime); healthyAt.current=Date.now(); setConnected(true);
       if (currentEmail) setEmailStatus(currentEmail);
       setCases(result.cases || []);
       const id = selectedRef.current;
@@ -96,7 +97,7 @@ function App() {
     api<RuntimeSnapshot>('/api/runtime').then(setRuntime).catch(() => {});
     const source = new EventSource('/api/events');
     source.onopen = () => { setConnected(true); void refresh(); setNotice(old => old?.error && /fetch|network|recovering/i.test(old.text) ? null : old); };
-    source.onerror = () => setConnected(false);
+    source.onerror = () => { if (Date.now()-healthyAt.current > 35000) setConnected(false); };
     source.addEventListener('snapshot', event => { try { setRuntime(JSON.parse((event as MessageEvent).data)); } catch {} });
     source.addEventListener('event', event => {
       try {
