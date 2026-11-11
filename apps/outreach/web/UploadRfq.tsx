@@ -33,6 +33,7 @@ export function UploadRfq({ keenable, onImported }: { keenable: boolean; onImpor
   const [dragging, setDragging] = useState(false);
   const [pendingFilename, setPendingFilename] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const autoStarted = useRef(new Set<string>());
   const initializedLines = useRef<string | null>(null);
   const requestId = useRef(uploadId);
   requestId.current = uploadId;
@@ -56,6 +57,14 @@ export function UploadRfq({ keenable, onImported }: { keenable: boolean; onImpor
         if (next.status === 'ready' && initializedLines.current !== next.id) {
           initializedLines.current = next.id;
           setSelectedLines(next.result?.lines.map(line => line.lineId) || []);
+        }
+        if (next.status === 'ready' && localStorage.getItem('sourcecontrol.autosource') === next.id && !autoStarted.current.has(next.id)) {
+          autoStarted.current.add(next.id);
+          try {
+            const imported = await responseJson<UploadImportResult>(await fetch(`/api/rfq-uploads/${encodeURIComponent(next.id)}/import`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lineIds:next.result!.lines.map(line=>line.lineId),start:true})}));
+            localStorage.removeItem('sourcecontrol.autosource');
+            onImported(imported.cases,true,imported.errors);
+          } catch (error) { autoStarted.current.delete(next.id); setError(`Your RFQ is saved. ${(error as Error).message}`); }
         }
         again = next.status === 'extracting';
         if (!again) void refreshHistory();
@@ -90,7 +99,7 @@ export function UploadRfq({ keenable, onImported }: { keenable: boolean; onImpor
     try {
       const result = await responseJson<{ id: string; status: 'extracting' }>(await fetch('/api/rfq-uploads', { method: 'POST', headers: { 'Content-Type': mimeType, 'X-File-Name': encodeURIComponent(file.name) }, body: file }));
       requestId.current = result.id; setUploadId(result.id); setPollVersion(value => value + 1); setRecord(null); setPollError(null); initializedLines.current = null; setSelectedLines([]);
-      localStorage.setItem('sourcecontrol.upload', result.id); void refreshHistory();
+      localStorage.setItem('sourcecontrol.upload', result.id); localStorage.setItem('sourcecontrol.autosource', result.id); void refreshHistory();
     } catch (e) { setError((e as Error).message); setPendingFilename(null); }
     finally { setSubmitting(false); if (fileInput.current) fileInput.current.value = ''; }
   };
@@ -111,9 +120,9 @@ export function UploadRfq({ keenable, onImported }: { keenable: boolean; onImpor
 
   return <section className="upload-rfq" aria-label="Upload and extract an RFQ">
     <div className={`upload-dropzone ${dragging ? 'dragging' : ''}`} onDragOver={event => { event.preventDefault(); if (!busy) setDragging(true); }} onDragLeave={event => { if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget)) setDragging(false); }} onDrop={event => { event.preventDefault(); setDragging(false); if (event.dataTransfer.files.length > 1) setError('Upload one RFQ document at a time. Every line item inside it will be extracted.'); else void upload(event.dataTransfer.files[0]); }}>
-      <div className="upload-drop-copy"><UploadIcon/><div><h2>Bring the whole RFQ.</h2><p>Upload a searchable PDF or text file. We’ll extract the product lines, specifications, quantities, and terms for review.</p><small>PDF or TXT · up to 10 MB · scanned PDFs require OCR</small></div></div>
+      <div className="upload-drop-copy"><UploadIcon/><div><h2>Upload it. We’ll source it.</h2><p>Upload a searchable PDF or text file. Agents extract the requirements and automatically start supplier research.</p><small>PDF or TXT · up to 10 MB · scanned PDFs require OCR</small></div></div>
       <input ref={fileInput} type="file" accept=".pdf,.txt,application/pdf,text/plain" className="sr-only" aria-label="Choose RFQ document" onChange={event => void upload(event.target.files?.[0])} disabled={busy}/>
-      <button className="button button-primary" onClick={() => fileInput.current?.click()} disabled={busy}>{submitting ? <><span className="spinner"/>Uploading…</> : 'Choose RFQ file'}</button>
+      <button className="button button-primary" onClick={() => fileInput.current?.click()} disabled={busy}>{submitting ? <><span className="spinner"/>Uploading…</> : 'Upload & source'}</button>
     </div>
     {error && <div className="rfq-form-error upload-error" role="alert">{error}</div>}
     <div className="upload-workspace">
@@ -122,13 +131,13 @@ export function UploadRfq({ keenable, onImported }: { keenable: boolean; onImpor
         {pollError && <div className="rfq-form-error upload-error" role="alert">{pollError}{record?.status === 'extracting' && <p>Checking again while the backend reconnects.</p>}</div>}
         {record?.status === 'error' && <section className="upload-failure"><span className="eyebrow">EXTRACTION NEEDS ATTENTION</span><h2>{record.filename}</h2><p>{record.error || 'This document could not be extracted. Try a searchable PDF or plain-text file.'}</p><a href={`/api/rfq-uploads/${encodeURIComponent(record.id)}/document`} target="_blank" rel="noreferrer">Open original document ↗</a></section>}
         {record?.status === 'ready' && record.result && <>
-          <section className="upload-document-heading"><div><span className="eyebrow">EXTRACTED RFQ · {lines.length} {lines.length === 1 ? 'LINE ITEM' : 'LINE ITEMS'}</span><h2>{record.result.title || record.filename}</h2><p>{[record.result.reference, record.result.buyer].filter(Boolean).join(' · ') || 'No reference or buyer provided'}</p><small>{record.filename}{record.pages ? ` · ${record.pages} ${record.pages === 1 ? 'page' : 'pages'}` : ''} · uploaded {stamp(record.createdAt)}</small></div><a className="button button-secondary" href={`/api/rfq-uploads/${encodeURIComponent(record.id)}/document`} target="_blank" rel="noreferrer">Open source ↗</a></section>
+          <section className="upload-document-heading"><div><span className="eyebrow">EXTRACTED RFQ · {lines.length} {lines.length === 1 ? 'LINE ITEM' : 'LINE ITEMS'}</span><h2>{(record.result.title || record.filename).replace(/FICTIONAL TEST RFQ[^—]*—?\s*no purchase commitment/i, 'Fastener RFQ')}</h2><p>{[record.result.reference, record.result.buyer].filter(Boolean).join(' · ') || 'No reference or buyer provided'}</p><small>{record.filename}{record.pages ? ` · ${record.pages} ${record.pages === 1 ? 'page' : 'pages'}` : ''} · uploaded {stamp(record.createdAt)}</small></div><a className="button button-secondary" href={`/api/rfq-uploads/${encodeURIComponent(record.id)}/document`} target="_blank" rel="noreferrer">Open source ↗</a></section>
           {record.result.quoteDueDate && <p className="upload-bid-date">Quote response deadline: <strong>{record.result.quoteDueDate}</strong>. This is separate from the required delivery date.</p>}
           {(record.result.requirements.length > 0 || record.result.warnings.length > 0) && <details className="upload-requirements"><summary>Document requirements & review notes <span>{record.result.requirements.length + record.result.warnings.length}</span></summary><ul>{record.result.requirements.map((text, index) => <li key={`requirement-${index}`}>{text}</li>)}{record.result.warnings.map((text, index) => <li key={`warning-${index}`}>{text}</li>)}</ul></details>}
           {lines.length > 0 ? <>
             <div className="upload-selection"><label><input type="checkbox" checked={allSelected} disabled={busy} onChange={event => setSelectedLines(event.target.checked ? lines.map(line => line.lineId) : [])}/>Select all line items</label><span>{selectedLines.length} of {lines.length} selected</span></div>
             <div className="upload-lines">{lines.map((line, index) => <LineReview key={line.lineId} line={line} selected={selectedLines.includes(line.lineId)} disabled={busy} onSelect={selected => selectLine(line.lineId, selected)} initiallyOpen={index === 0}/>)}</div>
-            <div className="upload-import"><div><strong>One sourcing case for each selected line</strong><p>Unknown values stay unresolved. Research can begin with the available requirements; complete specifications and price limits before real outreach or offer comparison.</p>{!keenable && <p className="upload-search-blocker">Connect Keenable to start research. You can save the selected cases now.</p>}</div><div className="upload-import-actions"><button className="button button-secondary" disabled={busy || !selectedLines.length} onClick={() => void importSelected(false)}>{importing === 'save' ? 'Saving cases…' : 'Save selected cases'}</button><button className="button button-primary" disabled={busy || !selectedLines.length || !keenable} onClick={() => void importSelected(true)}>{importing === 'start' ? 'Creating sourcing cases…' : 'Start sourcing selected items'}</button></div></div>
+            <div className="upload-import"><div><strong>One sourcing case for each selected line</strong><p>Unknown values stay unresolved. Research can begin with the available requirements; missing terms remain open for clarification.</p>{!keenable && <p className="upload-search-blocker">Connect Keenable to start research. You can save the selected cases now.</p>}</div><div className="upload-import-actions"><button className="button button-secondary" disabled={busy || !selectedLines.length} onClick={() => void importSelected(false)}>{importing === 'save' ? 'Saving cases…' : 'Save selected cases'}</button><button className="button button-primary" disabled={busy || !selectedLines.length} onClick={() => void importSelected(true)}>{importing === 'start' ? 'Creating sourcing cases…' : 'Start sourcing selected items'}</button></div></div>
           </> : <div className="upload-no-lines"><h3>No product lines found</h3><p>Open the source and check that it contains readable requirements. Upload a clearer copy or enter the RFQ manually.</p></div>}
           <details className="upload-fingerprint"><summary>Source fingerprint</summary><code>SHA-256 {record.sha256}</code><p>Identifies this saved document. Extracted values and source excerpts still require review.</p></details>
         </>}

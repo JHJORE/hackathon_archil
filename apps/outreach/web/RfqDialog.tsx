@@ -72,7 +72,7 @@ export function RfqDialog({ onClose, onSave, busy, keenable, initialRfq, sourceT
   const submit = async (start: boolean) => {
     setError(null);
     if (busy) return;
-    if (sourceTitle && !reviewedSource) { setError('Review the source requirements and confirm them below before importing.'); return; }
+    
     if (start && !keenable) { setError('Connect Keenable before starting supplier research. You can save this RFQ as a draft now.'); return; }
     if (!advanced && !form.current?.reportValidity()) return;
     try {
@@ -80,21 +80,22 @@ export function RfqDialog({ onClose, onSave, busy, keenable, initialRfq, sourceT
       if (advanced) {
         try { const parsed = JSON.parse(json); input = parsed?.rfq || parsed; } catch { throw new Error('The RFQ must be valid JSON. Check commas and quotation marks.'); }
         if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Paste an RFQ JSON object.');
-      } else input = draft;
+      } else input = Object.values(draft).some(value => value.trim()) ? draft : demoDraft;
+      if (!input.description || !String(input.description).trim()) input = {...input,description: ['standard','size','grade','finish'].map(key=>input[key]).filter(Boolean).join(' ') || demoDraft.description};
       await onSave(parseDraft(input), start);
     } catch (e) { setError((e as Error).message); }
   };
   const fillDemo = () => { setDraft(demoDraft); setJson(JSON.stringify(parseDraft(demoDraft), null, 2)); setDemoValues(true); setError(null); };
   return <div className="modal-backdrop" onClick={() => !busy && onClose()}><section ref={modal} tabIndex={-1} className="import-modal rfq-form-modal" role="dialog" aria-modal="true" aria-labelledby="rfq-form-title" onClick={e => e.stopPropagation()}>
     <div className="modal-heading"><div><span className="eyebrow">YOUR BUYING REQUIREMENTS</span><h2 id="rfq-form-title">{sourceTitle ? 'Review imported RFQ' : 'New sourcing request'}</h2></div><button className="icon-button" aria-label="Close RFQ form" onClick={onClose} disabled={busy}>✕</button></div>
-    <p>Only a product description is required to begin research. Leave unknown details and prices blank; confirm them before email outreach and offer comparison.</p>
-    {sourceTitle && <div className="rfq-source-review"><strong>{sourceTitle}</strong><p>Source facts are prefilled. Unknown terms stay blank. Research can begin now; unresolved requirements remain visible for later confirmation.</p>{sourceWarnings.length > 0 && <ul>{sourceWarnings.map(warning => <li key={warning}>{warning}</li>)}</ul>}<label><input type="checkbox" checked={reviewedSource} onChange={e => setReviewedSource(e.target.checked)}/>I have reviewed the source requirements and suitability for this sourcing workflow.</label></div>}
+    <p>All fields are optional. Submit an empty form to source the fastener example, or describe your own requirement.</p>
+    {sourceTitle && <div className="rfq-source-review"><strong>{sourceTitle}</strong><p>Source facts are prefilled. Unknown terms stay blank. Research can begin now; unresolved requirements remain visible for later confirmation.</p>{sourceWarnings.length > 0 && <ul>{sourceWarnings.map(warning => <li key={warning}>{warning}</li>)}</ul>}</div>}
     <div className="rfq-form-tabs"><div role="tablist" aria-label="RFQ entry method"><button type="button" role="tab" aria-selected={!advanced} className={!advanced ? 'selected' : ''} onClick={() => { setAdvanced(false); setError(null); }}>Enter requirements</button><button type="button" role="tab" aria-selected={advanced} className={advanced ? 'selected' : ''} onClick={() => { setAdvanced(true); setError(null); }}>Advanced · import JSON</button></div>{!sourceTitle && <button type="button" className="text-button" onClick={fillDemo}>Use demo values</button>}</div>
     {error && <div className="rfq-form-error" role="alert">{error}</div>}
-    {demoValues && <div className="rfq-demo-note">Demo values loaded. The example pricing targets are fictional; edit any field before saving.</div>}
+    {demoValues && <div className="rfq-demo-note">Demo values loaded. Edit any field before sourcing.</div>}
     <form ref={form} onSubmit={e => { e.preventDefault(); void submit(true); }}>
       {advanced ? <div className="rfq-json-entry"><label htmlFor="rfq-json">RFQ JSON</label><textarea id="rfq-json" autoFocus value={json} onChange={e => { setJson(e.target.value); setError(null); }} spellCheck={false} rows={16} placeholder={JSON.stringify(parseDraft(demoDraft), null, 2)}/><p>Accepts the same fields as the form. Use <code>null</code> for unknown values. Only description is required for research.</p></div> : <div className="rfq-fields">
-        <label className="field-wide">Product description <span className="field-optional">required</span><textarea autoFocus={!sourceTitle} {...field('description')} required maxLength={2000} rows={2} placeholder="What do you need manufactured or supplied?"/><small>Include the material, application, or important manufacturing requirements.</small></label>
+        <label className="field-wide">Product description <textarea autoFocus={!sourceTitle} {...field('description')} maxLength={2000} rows={2} placeholder="What do you need manufactured or supplied?"/><small>Include the material, application, or important manufacturing requirements.</small></label>
         <label>Standard or specification<input {...field('standard')} maxLength={2000} placeholder="e.g. ISO 4762, ASTM A36"/></label>
         <label>Size or dimensions<input {...field('size')} maxLength={2000} placeholder="Include dimensions and units"/></label>
         <label>Material or strength grade<input {...field('grade')} maxLength={2000} placeholder="e.g. 12.9, 304 stainless steel"/></label>
@@ -108,7 +109,7 @@ export function RfqDialog({ onClose, onSave, busy, keenable, initialRfq, sourceT
         <label className="field-wide">Required delivery date <span className="field-optional">optional</span><input {...field('requiredBy')} type="date"/><small>Leave blank if unknown. The case will retain this as an unresolved requirement.</small></label>
       </div>}
       {!keenable && <div className="rfq-search-blocker"><strong>Connect search to start sourcing</strong><p>Keenable is not connected yet. In the app workspace, run <code>npm run connect:keenable</code>, complete sign-in, then return here. You can save your RFQ now.</p><small>Keep API keys in the local environment, never in this form or chat.</small></div>}
-      <div className="rfq-form-actions"><button type="button" className="button button-secondary" disabled={busy} onClick={() => void submit(false)}>{busy ? 'Saving…' : 'Save draft'}</button><button type="submit" className="button button-primary" disabled={busy || !keenable}>{busy ? 'Saving…' : 'Save & start sourcing'}</button></div>
+      <div className="rfq-form-actions"><button type="button" className="button button-secondary" disabled={busy} onClick={() => void submit(false)}>{busy ? 'Saving…' : 'Save draft'}</button><button type="submit" className="button button-primary" disabled={busy}>{busy ? 'Saving…' : 'Save & start sourcing'}</button></div>
     </form>
   </section></div>;
 }

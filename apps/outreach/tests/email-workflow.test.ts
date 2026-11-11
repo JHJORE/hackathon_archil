@@ -103,21 +103,18 @@ test('fresh email outreach copies only selected supported candidates and leaves 
   await assert.rejects(app.receive(state.id, { messageId: 'fake', supplierId: 'supplier-one', text: 'fake' }), /disabled/);
 });
 
-test('unknown RFQ terms block email preparation and approval before writes or provider sends', async () => {
-  const { app, source, state, draft, store, mail } = await setup();
-  const sourceState = (await app.detail(source.id)).state;
-  sourceState.rfq = { ...sourceState.rfq, grade: null, quantity: null, targetUnitPrice: null, maxUnitPrice: null };
-  await store.put(`cases/${source.id}/state.json`, sourceState);
-  const before = structuredClone(store.values);
-  await assert.rejects(app.prepareEmailOutreach(source.id, [candidate.supplierId]), (error: any) => error.status === 428 && error.missingFields.includes('grade') && error.missingFields.includes('quantity') && error.message.includes('maxUnitPrice'));
-  assert.deepEqual(store.values, before);
-  const emailState = (await app.detail(state.id)).state;
-  emailState.rfq = { ...emailState.rfq, targetUnitPrice: null };
-  await store.put(`cases/${state.id}/state.json`, emailState);
-  const approvalBefore = structuredClone(store.values);
-  await assert.rejects(approve(app, draft), (error: any) => error.status === 428 && error.message.includes('targetUnitPrice'));
-  assert.deepEqual(store.values, approvalBefore);
-  assert.equal(mail.creates, 0); assert.equal(mail.sends, 0);
+test('incomplete RFQs prepare reviewed quotation requests without invented terms or automatic sends', async () => {
+  const { app, source, store, mail } = await setup();
+  const state = (await app.detail(source.id)).state;
+  state.rfq = {...state.rfq,grade:null,quantity:null,targetUnitPrice:null,maxUnitPrice:null};
+  await store.put(`cases/${source.id}/state.json`,state);
+  const prepared = await app.prepareEmailOutreach(source.id,[candidate.supplierId]);
+  const detail = await app.detail(prepared.id);
+  assert.match(detail.emailDrafts![0].body,/Quantity: Please propose \/ confirm/);
+  assert.doesNotMatch(detail.emailDrafts![0].body,/null/);
+  assert.equal(mail.sends,0);
+  await approve(app,detail.emailDrafts![0]);
+  assert.equal(mail.sends,1);
 });
 
 test('incoming email with incomplete buyer terms is retained without a target-met claim or reply draft', async () => {

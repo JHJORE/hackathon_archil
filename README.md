@@ -60,7 +60,7 @@ These helpers save keys locally without displaying them. Keenable linking and av
 
 1. **Upload and review an RFQ**, select a Scout request, or choose **New RFQ**. An upload can contain multiple products: review the source quotations and select the lines you want. Each selected line becomes its own sourcing case.
 2. **Start sourcing.** Research can use known requirements while missing values remain `null`. Inspect the returned evidence and uncertainties. A run can return fewer than three suppliers when evidence is insufficient; no manufacturers are invented to fill the shortlist.
-3. **Choose communications.** Complete required specifications and commercial fields before real email; missing fields block outreach. Demo controls inject explicitly simulated quotes. **Prepare email outreach** creates a separate real-email case with editable drafts. Buyer contacts from Scout are never treated as supplier addresses.
+3. **Choose communications.** Missing fields remain open for supplier clarification in reviewed RFQ emails. Demo controls inject explicitly simulated quotes. **Prepare email outreach** creates a separate real-email case with editable drafts. Buyer contacts from Scout are never treated as supplier addresses.
 4. **Review each send.** Save changes, then approve the exact recipient and saved message. Replies can generate a clarification or one counteroffer, each requiring approval. A target-met result is a recommendation, not an accepted purchase.
 
 The backend monitors tracked email threads while running. Unknown sends are reconciled instead of blindly resent. Retain both Archil state and local delivery-operation records across restarts. This app does not place orders or make payments.
