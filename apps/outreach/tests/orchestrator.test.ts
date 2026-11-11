@@ -319,3 +319,22 @@ test('offer history preserves initial and final quotes in receipt order across r
   assert.deepEqual((await recovered.detail(id)).offerHistory!.s1, before);
   assert.equal(model.jobs.length, 2);
 });
+
+test('live failure reuses only complete saved snapshots for the same RFQ, once',async()=>{
+ const {app,id,store,research,events}=await setup();
+ const saved=(await app.detail(id)).state;
+ for(const track of ['english','chinese'])await store.put(`cases/${id}/research/${saved.researchAttempt}/${track}/input/raw_evidence.json`,[{url:'https://supplier.example.test'}]);
+ let calls=0;
+ research.run=async(...args:unknown[])=>{calls++;const state=args[0] as {researchMode:string};if(state.researchMode==='live')throw new Error('Search unavailable');return {candidates:[candidate('saved-supplier')],uncertainties:[]};};
+ const next=await app.create();await app.start(next.id);
+ const result=(await app.detail(next.id)).state;
+ assert.equal(calls,2);assert.equal(result.researchMode,'saved research');assert.equal(result.researchReplay?.caseId,id);assert.equal(result.researchComplete,true);assert.ok(events.events.some(e=>e.type==='research.fallback'));
+ const different=await app.create({...DEMO_RFQ,quantity:12});await assert.rejects(app.start(different.id),/Search unavailable/);assert.equal(calls,3);
+});
+
+test('saved fallback failure stops after one attempt and remains recoverable',async()=>{
+ const {app,id,store,research}=await setup();const saved=(await app.detail(id)).state;
+ for(const track of ['english','chinese'])await store.put(`cases/${id}/research/${saved.researchAttempt}/${track}/input/raw_evidence.json`,[{}]);
+ let calls=0;research.run=async()=>{calls++;throw new Error('Model unavailable');};
+ const next=await app.create();await assert.rejects(app.start(next.id),/Model unavailable/);assert.equal(calls,2);assert.equal((await app.detail(next.id)).state.status,'error');
+});

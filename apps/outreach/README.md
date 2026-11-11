@@ -111,3 +111,9 @@ The bundled sample describes 50,000 ISO 4762 M8x30 Grade 12.9 black-oxide screws
 Source provenance follows evidence replays and fresh email cases. The source fingerprint identifies the original JSON bytes; `snapshotSha256` separately identifies the preserved raw snapshot record. No Scout records are modified or migrated. Set `SCOUT_DISK_ID` server-side to change the input disk.
 
 The calm industrial visual direction and workflow principles are recorded in `.impeccable.md`. The dashboard keeps RFQ Scout, sourcing, evidence and inbox in one shell; agent execution details and simulated demo controls are available on demand.
+
+## Unified Run flow
+
+The workspace has one **Run** action. An empty request uses the backend fastener example; partial RFQs retain their own terms and leave unknown fields unset. Scenario controls are collapsed below the workspace and never occupy a side drawer.
+
+`POST /api/run` accepts `{caseId}` to start/resume an existing case or `{rfq}` to create and start one; an empty body uses the backend example. If live research fails, the orchestrator retries once using complete saved snapshots for exactly the same RFQ, when available. The case is marked **saved research**, preserving original retrieval times. If no matching evidence exists or the retry fails, the saved case remains available with an actionable error; suppliers are never invented.

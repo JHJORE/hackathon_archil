@@ -170,7 +170,22 @@ export class Orchestrator {
   async start(id: string): Promise<void> {
     const running = this.activeResearch.get(id);
     if (running) return running;
-    const work = this.startResearch(id).catch(async error => { await this.markError(id, undefined, error); throw error; });
+    const work = this.startResearch(id).catch(async error => {
+      const failed = await this.read(id);
+      if (failed.communicationMode === 'email' || failed.researchMode !== 'live' || failed.researchComplete) throw error;
+      const identity = JSON.stringify(parseRfq(failed.rfq));
+      for (const saved of this.list().filter(item=>item.id!==id && item.researchComplete && item.researchAttempt && JSON.stringify(parseRfq(item.rfq))===identity)) {
+        const snapshots = await Promise.all(['english','chinese'].map(track=>this.store.get<unknown[]>(`${this.base(saved.id)}/research/${saved.researchAttempt}/${track}/input/raw_evidence.json`)));
+        if (!snapshots.every(pages=>Array.isArray(pages)&&pages.length>0)) continue;
+        await this.lock(id,async()=>{
+          const latest=await this.read(id);latest.researchMode='saved research';latest.researchReplay={caseId:saved.id,attemptId:saved.researchAttempt!};latest.error=null;
+          latest.uncertainties.push('Live sourcing was unavailable. This run uses previously captured evidence for the same RFQ; source retrieval times remain visible.');await this.save(latest);
+        });
+        await this.event('research.fallback','Continuing with saved evidence for the same RFQ.',id);
+        return this.startResearch(id);
+      }
+      throw error;
+    }).catch(async error => { await this.markError(id, undefined, error); throw error; });
     this.activeResearch.set(id, work); this.track(work);
     try { await work; } finally { this.activeResearch.delete(id); }
   }

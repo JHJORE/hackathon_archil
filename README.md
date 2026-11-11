@@ -92,3 +92,9 @@ The validation commands cover setup diagnostics, application tests, TypeScript c
 Tests use synthetic fixtures and fake email transport for scheduling, grounding, source revisions, approval, deduplication, and recovery. They do not prove that a real supplier exchange occurred.
 
 Read [the architecture](docs/architecture.md) for data flow and boundaries, [the app README](apps/outreach/README.md) for operating details, and [shared contracts](apps/outreach/shared/) for integration types.
+
+## Unified Run flow
+
+The workspace has one **Run** action. An empty request uses the backend fastener example; partial RFQs retain their own terms and leave unknown fields unset. Scenario controls are collapsed below the workspace and never occupy a side drawer.
+
+`POST /api/run` accepts `{caseId}` to start/resume an existing case or `{rfq}` to create and start one; an empty body uses the backend example. If live research fails, the orchestrator retries once using complete saved snapshots for exactly the same RFQ, when available. The case is marked **saved research**, preserving original retrieval times. If no matching evidence exists or the retry fails, the saved case remains available with an actionable error; suppliers are never invented.

@@ -22,6 +22,7 @@ import { localRequestGuard } from './local-request.js';
 import { ScoutService } from './scout.js';
 import { scoutRoutes } from './scout-routes.js';
 import type { EmailStatus } from '../shared/email.js';
+import { runRfq } from './run-input.js';
 import { storageConfiguration } from './runtime-config.js';
 import { RfqUploadService } from './rfq-upload.js';
 import { rfqUploadRoutes } from './rfq-upload-routes.js';
@@ -80,6 +81,12 @@ app.get('/api/events',(req,res)=>{
   const interval=setInterval(()=>res.write(': heartbeat\n\n'),15000);req.on('close',()=>{clearInterval(interval);clearTimeout(lease);clients.delete(res);});
 });
 app.get('/api/cases',(_req,res)=>res.json({cases:orchestrator.list()}));
+app.post('/api/run',async(req,res)=>{
+  ready();
+  const state = req.body?.caseId ? (await orchestrator.detail(id(req.body.caseId))).state : await orchestrator.create(runRfq(req.body?.rfq));
+  void orchestrator.start(state.id).catch(error=>events.emit('case.error',redact(error.message),{},state.id));
+  res.status(202).json(state);
+});
 app.post('/api/cases',async(req,res)=>{ready();res.status(201).json(await orchestrator.create(parseRfq(req.body?.rfq)));});
 app.post('/api/cases/:id/replay',async(req,res)=>{ready();res.status(201).json(await orchestrator.replay(id(req.params.id)));});
 app.get('/api/cases/:id',async(req,res)=>{ready();res.json(await orchestrator.detail(id(req.params.id)));});
